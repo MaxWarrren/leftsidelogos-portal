@@ -53,11 +53,6 @@ const items = [
         icon: MessageSquare,
     },
     {
-        title: "Files",
-        url: "/files",
-        icon: FileText,
-    },
-    {
         title: "Order Status",
         url: "/orders",
         icon: Clock,

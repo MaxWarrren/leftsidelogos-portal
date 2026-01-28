@@ -72,9 +72,9 @@ const items = [
         icon: MessageSquare,
     },
     {
-        title: "Files",
-        url: "/admin/files",
-        icon: FileText,
+        title: "Global Chat",
+        url: "/admin/messages",
+        icon: MessageSquare,
     },
 ];
 
