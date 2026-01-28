@@ -229,7 +229,7 @@ export default function AdminClientsPage() {
 
                             <div className="grid gap-2">
                                 <Label>Associate Orders</Label>
-                                <div className="border border-slate-200 rounded-md p-2 bg-slate-50">
+                                <div className="border border-slate-200 rounded-md p-2 bg-gray-50">
                                     <ScrollArea className="h-[120px]">
                                         <div className="space-y-1">
                                             {orders.map(order => (
@@ -309,7 +309,7 @@ export default function AdminClientsPage() {
 
                             <div className="grid gap-2">
                                 <Label>Associate Orders</Label>
-                                <div className="border border-slate-200 rounded-md p-2 bg-slate-50">
+                                <div className="border border-slate-200 rounded-md p-2 bg-gray-50">
                                     <ScrollArea className="h-[120px]">
                                         <div className="space-y-1">
                                             {orders.map(order => (
@@ -357,14 +357,14 @@ export default function AdminClientsPage() {
                         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
                         <Input
                             placeholder="Search by name or code..."
-                            className="pl-9 bg-slate-50 border-slate-200"
+                            className="pl-9 bg-gray-50 border-slate-200"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
                     </div>
                 </div>
                 <Table>
-                    <TableHeader className="bg-slate-50">
+                    <TableHeader className="bg-gray-50">
                         <TableRow>
                             <TableHead className="font-bold uppercase tracking-wider text-xs">Name</TableHead>
                             <TableHead className="font-bold uppercase tracking-wider text-xs">Access Code</TableHead>
@@ -384,7 +384,7 @@ export default function AdminClientsPage() {
                                 <TableRow key={org.id}>
                                     <TableCell className="font-medium text-slate-900">{org.name}</TableCell>
                                     <TableCell>
-                                        <code className="bg-slate-100 px-2 py-1 rounded text-xs font-mono border border-slate-200 text-slate-600">
+                                        <code className="bg-gray-100 px-2 py-1 rounded text-xs font-mono border border-slate-200 text-slate-600">
                                             {org.access_code}
                                         </code>
                                     </TableCell>

@@ -8,7 +8,7 @@ import { createClient } from "@/utils/supabase/server";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 
-import { ModeToggle } from "@/components/mode-toggle";
+
 
 export default async function DashboardLayout({
     children,
@@ -62,26 +62,24 @@ export default async function DashboardLayout({
 
     return (
         <SidebarProvider>
-            <div className="flex h-screen w-full bg-slate-50 dark:bg-slate-950 overflow-hidden">
+            <div className="flex h-screen w-full bg-white overflow-hidden">
                 <AppSidebar organizations={userOrgs} currentOrgId={activeOrgId} />
-                <SidebarInset className="flex flex-col flex-1 overflow-hidden bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800">
+                <SidebarInset className="flex flex-col flex-1 overflow-hidden bg-white border-l border-slate-200">
                     {/* Top Navbar */}
-                    <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6">
+                    <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6">
                         <div className="flex items-center gap-3">
-                            <Avatar className="h-9 w-9 border border-slate-200 dark:border-slate-800">
+                            <Avatar className="h-9 w-9 border border-slate-200">
                                 <AvatarImage src="" />
-                                <AvatarFallback className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                                <AvatarFallback className="bg-slate-100 text-slate-600">
                                     <User className="h-5 w-5" />
                                 </AvatarFallback>
                             </Avatar>
                             <div className="flex flex-col">
-                                <span className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-none">{fullName}</span>
-                                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider">{role}</span>
+                                <span className="text-sm font-bold text-slate-900 leading-none">{fullName}</span>
+                                <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">{role}</span>
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
-                            <ModeToggle />
-                            <div className="w-[1px] h-6 bg-slate-200 dark:bg-slate-800 mx-1" />
                             <LogoutButton />
                         </div>
                     </header>

@@ -178,7 +178,7 @@ export default function MessagesPage() {
                                 <div
                                     key={msg.id}
                                     className={cn(
-                                        "group flex gap-4 px-6 hover:bg-slate-50/50 transition-colors py-1",
+                                        "group flex gap-4 px-6 hover:bg-gray-50/50 transition-colors py-1",
                                         showProfile ? "mt-4 pt-2" : ""
                                     )}
                                 >
@@ -229,7 +229,7 @@ export default function MessagesPage() {
 
             {/* Input Area */}
             <div className="p-6 bg-white border-t border-slate-100">
-                <div className="relative flex items-end gap-3 bg-slate-50 rounded-2xl border border-slate-200 p-2 focus-within:border-slate-400 transition-all focus-within:shadow-md">
+                <div className="relative flex items-end gap-3 bg-gray-50 rounded-2xl border border-slate-200 p-2 focus-within:border-slate-400 transition-all focus-within:shadow-md">
                     <textarea
                         className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-2 px-3 resize-none min-h-[44px] max-h-48 text-slate-700 placeholder:text-slate-400"
                         placeholder={`Message # team-chat`}

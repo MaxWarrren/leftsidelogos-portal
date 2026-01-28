@@ -139,7 +139,7 @@ export default function DashboardPage() {
                         {recentOrders.length > 0 ? (
                             <div className="space-y-4">
                                 {recentOrders.map(order => (
-                                    <div key={order.id} className="flex flex-col gap-1 pb-3 border-b border-slate-50 last:border-0 last:pb-0">
+                                    <div key={order.id} className="flex flex-col gap-1 pb-3 border-b border-gray-100 last:border-0 last:pb-0">
                                         <div className="flex justify-between items-center">
                                             <span className="font-semibold text-slate-900 text-sm">
                                                 {order.name}
@@ -162,7 +162,7 @@ export default function DashboardPage() {
                         )}
                     </CardContent>
                     <div className="p-4 pt-0 mt-auto">
-                        <Button asChild variant="outline" className="w-full border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50">
+                        <Button asChild variant="outline" className="w-full border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-gray-50">
                             <Link href="/orders">View All Orders <ArrowRight className="ml-2 h-3 w-3" /></Link>
                         </Button>
                     </div>
@@ -185,7 +185,7 @@ export default function DashboardPage() {
                             </>
                         ) : (
                             <>
-                                <div className="h-12 w-12 rounded-full bg-slate-50 flex items-center justify-center mb-3">
+                                <div className="h-12 w-12 rounded-full bg-gray-50 flex items-center justify-center mb-3">
                                     <MessageSquare className="h-6 w-6 text-slate-300" />
                                 </div>
                                 <p className="text-slate-500 font-medium">All caught up!</p>
@@ -213,7 +213,7 @@ export default function DashboardPage() {
                             <div className="space-y-3">
                                 {activeFiles.map(file => (
                                     <Link key={file.id} href="/files" className="block group">
-                                        <div className="flex items-start gap-3 p-2 -mx-2 rounded-lg hover:bg-slate-50 transition-colors">
+                                        <div className="flex items-start gap-3 p-2 -mx-2 rounded-lg hover:bg-gray-50 transition-colors">
                                             <AlertCircle className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />
                                             <div className="min-w-0">
                                                 <p className="text-sm font-semibold text-slate-900 truncate group-hover:text-indigo-600 transition-colors">

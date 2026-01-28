@@ -5,7 +5,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogoutButton } from "@/components/logout-button";
 import { createClient } from "@/utils/supabase/server";
 import { redirect } from "next/navigation";
-import { ModeToggle } from "@/components/mode-toggle";
+
 
 export default async function AdminLayout({
     children,
@@ -34,26 +34,24 @@ export default async function AdminLayout({
 
     return (
         <SidebarProvider>
-            <div className="flex h-screen w-full bg-slate-50 dark:bg-slate-950 overflow-hidden">
+            <div className="flex h-screen w-full bg-white overflow-hidden">
                 <AdminSidebar />
-                <SidebarInset className="flex flex-col flex-1 overflow-hidden bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800">
+                <SidebarInset className="flex flex-col flex-1 overflow-hidden bg-white border-l border-slate-200">
                     {/* Top Navbar */}
-                    <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6">
+                    <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6">
                         <div className="flex items-center gap-3">
-                            <Avatar className="h-9 w-9 border border-slate-200 dark:border-slate-800">
-                                <AvatarFallback className="bg-slate-900 dark:bg-slate-800 text-white dark:text-slate-400">
+                            <Avatar className="h-9 w-9 border border-slate-200">
+                                <AvatarFallback className="bg-slate-900 text-white">
                                     <User className="h-5 w-5" />
                                 </AvatarFallback>
                             </Avatar>
                             <div className="flex flex-col">
-                                <span className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-none">{fullName}</span>
-                                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider">{role}</span>
+                                <span className="text-sm font-bold text-slate-900 leading-none">{fullName}</span>
+                                <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">{role}</span>
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
-                            <span className="px-2 py-1 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-[10px] font-bold uppercase rounded border border-red-100 dark:border-red-900/30 mr-2">Live Production</span>
-                            <ModeToggle />
-                            <div className="w-[1px] h-6 bg-slate-200 dark:bg-slate-800 mx-1" />
+                            <span className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold uppercase rounded border border-red-100 mr-2">Live Production</span>
                             <LogoutButton />
                         </div>
                     </header>
