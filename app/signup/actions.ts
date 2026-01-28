@@ -25,12 +25,12 @@ export async function signup(prevState: any, formData: FormData) {
     })
 
     if (error) {
-        return { error: error.message }
+        return { error: error.message, message: '' }
     }
 
     if (data.session) {
         redirect('/join')
     }
 
-    return { message: 'Please check your email to confirm your account.' }
+    return { message: 'Please check your email to confirm your account.', error: '' }
 }

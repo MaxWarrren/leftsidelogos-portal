@@ -13,8 +13,8 @@ export async function forgotPassword(prevState: any, formData: FormData) {
     })
 
     if (error) {
-        return { error: 'Could not send reset email. Please try again.' }
+        return { error: 'Could not send reset email. Please try again.', message: '' }
     }
 
-    return { message: 'Check your email for a password reset link.' }
+    return { message: 'Check your email for a password reset link.', error: '' }
 }
