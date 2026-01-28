@@ -27,8 +27,23 @@ export default function FilesPage() {
         let channel: any;
 
         const fetchFiles = async () => {
-            const match = document.cookie.match(new RegExp('(^| )active_org_id=([^;]+)'));
-            const activeOrgId = match ? match[2] : null;
+            let match = document.cookie.match(new RegExp('(^| )active_org_id=([^;]+)'));
+            let activeOrgId = match ? match[2] : null;
+
+            if (!activeOrgId) {
+                // Fallback: Fetch first org
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                    const { data: membership } = await supabase
+                        .from('organization_members')
+                        .select('organization_id')
+                        .eq('user_id', user.id)
+                        .limit(1)
+                        .single();
+
+                    if (membership) activeOrgId = membership.organization_id;
+                }
+            }
 
             if (!activeOrgId) {
                 setLoading(false);
