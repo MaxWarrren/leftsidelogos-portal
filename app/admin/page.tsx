@@ -10,82 +10,78 @@ export default function AdminDashboardPage() {
     const supabase = createClient();
     const [stats, setStats] = useState([
         { title: "Total Clients", value: "0", icon: Users, color: "text-blue-600" },
-        { title: "Pending Orders", value: "0", icon: ShoppingBag, color: "text-green-600" },
+        { title: "Active Orders", value: "0", icon: ShoppingBag, color: "text-green-600" },
         { title: "New Messages", value: "0", icon: MessageSquare, color: "text-purple-600" },
-        { title: "Pending Files", value: "0", icon: AlertCircle, color: "text-orange-600" },
+        { title: "New Leads", value: "0", icon: Users, color: "text-orange-600" },
     ]);
 
     const [recentActivity, setRecentActivity] = useState<any[]>([]);
     const [activeOrders, setActiveOrders] = useState<any[]>([]);
 
+    const fetchStats = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // 1. Total Clients
+        const { count: clientCount } = await supabase.from('organizations').select('*', { count: 'exact', head: true });
+
+        // 2. Active Orders (Not Completed)
+        const { count: orderCount } = await supabase.from('orders').select('*', { count: 'exact', head: true }).neq('status', 'completed');
+
+        // 3. New Messages (Unread by current admin)
+        const { data: messages } = await supabase
+            .from('messages')
+            .select('created_at, organization_id, sender_id, profiles!inner(role)')
+            .eq('profiles.role', 'customer');
+
+        const { data: readReceipts } = await supabase
+            .from('message_reads')
+            .select('*')
+            .eq('user_id', user.id);
+
+        let unreadCount = 0;
+        if (messages) {
+            messages.forEach(msg => {
+                const receipt = readReceipts?.find(r => r.organization_id === msg.organization_id);
+                if (!receipt || new Date(msg.created_at) > new Date(receipt.last_read_at)) {
+                    unreadCount++;
+                }
+            });
+        }
+
+        // 4. New Leads
+        const { count: leadsCount } = await supabase.from('leads')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'new');
+
+        setStats([
+            { title: "Total Clients", value: clientCount?.toString() || "0", icon: Users, color: "text-blue-600" },
+            { title: "Active Orders", value: orderCount?.toString() || "0", icon: ShoppingBag, color: "text-green-600" },
+            { title: "New Messages", value: unreadCount.toString(), icon: MessageSquare, color: "text-purple-600" },
+            { title: "New Leads", value: leadsCount?.toString() || "0", icon: Users, color: "text-orange-600" },
+        ]);
+
+        // 5. Recent Activity
+        const { data: recent } = await supabase
+            .from('messages')
+            .select('*, organizations(name), profiles(full_name)')
+            .order('created_at', { ascending: false })
+            .limit(5);
+
+        if (recent) setRecentActivity(recent);
+
+        // 6. Production Status (Active Orders)
+        const { data: orders } = await supabase
+            .from('orders')
+            .select('*, organizations(name)')
+            .neq('status', 'completed') // Show only active
+            .order('created_at', { ascending: false })
+            .limit(5);
+
+        if (orders) setActiveOrders(orders);
+    };
+
     useEffect(() => {
-        const fetchStats = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
-
-            // 1. Total Clients
-            const { count: clientCount } = await supabase.from('organizations').select('*', { count: 'exact', head: true });
-
-            // 2. Pending Orders
-            const { count: orderCount } = await supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'pending');
-
-            // 3. New Messages (Unread by current admin)
-            // This is a bit complex in standard JS, so we fetch all customer messages
-            // and compare against message_reads in a simplified way for now.
-            // For a production app, this would be a single SQL function.
-            const { data: messages } = await supabase
-                .from('messages')
-                .select('created_at, organization_id, sender_id, profiles!inner(role)')
-                .eq('profiles.role', 'customer');
-
-            const { data: readReceipts } = await supabase
-                .from('message_reads')
-                .select('*')
-                .eq('user_id', user.id);
-
-            let unreadCount = 0;
-            if (messages) {
-                messages.forEach(msg => {
-                    const receipt = readReceipts?.find(r => r.organization_id === msg.organization_id);
-                    if (!receipt || new Date(msg.created_at) > new Date(receipt.last_read_at)) {
-                        unreadCount++;
-                    }
-                });
-            }
-
-            // 4. Pending Contracts (Pending or Unpaid)
-            const { count: contractCount } = await supabase
-                .from('contracts')
-                .select('*', { count: 'exact', head: true })
-                .or('status.eq.pending,status.eq.unpaid');
-
-            setStats([
-                { title: "Total Clients", value: clientCount?.toString() || "0", icon: Users, color: "text-blue-600" },
-                { title: "Pending Orders", value: orderCount?.toString() || "0", icon: ShoppingBag, color: "text-green-600" },
-                { title: "New Messages", value: unreadCount.toString(), icon: MessageSquare, color: "text-purple-600" },
-                { title: "Pending Files", value: contractCount?.toString() || "0", icon: AlertCircle, color: "text-orange-600" },
-            ]);
-
-            // 5. Recent Activity
-            const { data: recent } = await supabase
-                .from('messages')
-                .select('*, organizations(name), profiles(full_name)')
-                .order('created_at', { ascending: false })
-                .limit(5);
-
-            if (recent) setRecentActivity(recent);
-
-            // 6. Production Status (Active Orders)
-            const { data: orders } = await supabase
-                .from('orders')
-                .select('*, organizations(name)')
-                .neq('status', 'shipped')
-                .order('created_at', { ascending: false })
-                .limit(5);
-
-            if (orders) setActiveOrders(orders);
-        };
-
         fetchStats();
 
         // Realtime Subscription for automatic updates
@@ -94,13 +90,18 @@ export default function AdminDashboardPage() {
             .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchStats)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, fetchStats)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'organizations' }, fetchStats)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'contracts' }, fetchStats)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, fetchStats)
             .subscribe();
 
         return () => {
             supabase.removeChannel(channel);
         };
     }, [supabase]);
+
+    const handleClearActivity = () => {
+        setRecentActivity([]);
+        // Ideally save this preference or timestamp, but for now just clear local state for the session/view
+    };
 
     return (
         <div className="space-y-6">
@@ -127,8 +128,14 @@ export default function AdminDashboardPage() {
 
             <div className="grid gap-6 md:grid-cols-2">
                 <Card className="bg-white border-slate-200">
-                    <CardHeader>
+                    <CardHeader className="flex flex-row items-center justify-between">
                         <CardTitle className="text-lg">Recent Client Activity</CardTitle>
+                        <button
+                            onClick={handleClearActivity}
+                            className="text-xs text-slate-400 hover:text-slate-600 font-medium px-2 py-1 rounded hover:bg-slate-50 transition-colors"
+                        >
+                            Clear
+                        </button>
                     </CardHeader>
                     <CardContent>
                         <div className="space-y-4">

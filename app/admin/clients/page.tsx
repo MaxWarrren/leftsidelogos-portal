@@ -11,6 +11,7 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
     Dialog,
     DialogContent,
@@ -178,17 +179,18 @@ export default function AdminClientsPage() {
     );
 
     return (
-        <div className="space-y-6">
+        <div className="flex flex-col h-full space-y-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-3xl font-bold text-slate-900">Clients</h1>
-                    <p className="text-slate-500">Manage all client organizations and access codes.</p>
+                    <h1 className="text-3xl font-bold text-slate-900">Organizations & Members</h1>
+                    <p className="text-slate-500">Manage client organizations and user access.</p>
                 </div>
                 <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
                     <Button onClick={openCreateDialog} className="bg-slate-900 text-white hover:bg-slate-800">
                         <Plus className="mr-2 h-4 w-4" />
                         Add Client
                     </Button>
+                    {/* Dialog content preserved but hidden in this snippet for brevity, assumed handled by state */}
                     <DialogContent className="sm:max-w-[425px] bg-white text-slate-900 border-slate-200">
                         <DialogHeader>
                             <DialogTitle>Add New Client</DialogTitle>
@@ -351,87 +353,174 @@ export default function AdminClientsPage() {
                 </Dialog>
             </div>
 
-            <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-slate-200">
-                    <div className="relative max-w-sm">
-                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-                        <Input
-                            placeholder="Search by name or code..."
-                            className="pl-9 bg-gray-50 border-slate-200"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                    </div>
-                </div>
-                <Table>
-                    <TableHeader className="bg-gray-50">
-                        <TableRow>
-                            <TableHead className="font-bold uppercase tracking-wider text-xs">Name</TableHead>
-                            <TableHead className="font-bold uppercase tracking-wider text-xs">Access Code</TableHead>
-                            <TableHead className="font-bold uppercase tracking-wider text-xs">LTV</TableHead>
-                            <TableHead className="font-bold uppercase tracking-wider text-xs">Created At</TableHead>
-                            <TableHead className="text-right font-bold uppercase tracking-wider text-xs">Actions</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {filteredOrgs.map((org) => {
-                            const accessCode = org.access_code; // Just using variable to match map
-                            const ltv = orders
-                                .filter(o => o.organization_id === org.id)
-                                .reduce((sum, o) => sum + (o.price || 0), 0);
+            <Tabs defaultValue="organizations" className="w-full flex-1 flex flex-col">
+                <TabsList className="w-fit mb-4">
+                    <TabsTrigger value="organizations">Active Organizations</TabsTrigger>
+                    <TabsTrigger value="members">Active Members</TabsTrigger>
+                </TabsList>
 
-                            return (
-                                <TableRow key={org.id}>
-                                    <TableCell className="font-medium text-slate-900">{org.name}</TableCell>
-                                    <TableCell>
-                                        <code className="bg-gray-100 px-2 py-1 rounded text-xs font-mono border border-slate-200 text-slate-600">
-                                            {org.access_code}
-                                        </code>
-                                    </TableCell>
-                                    <TableCell className="font-medium text-slate-900">
-                                        ${ltv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </TableCell>
-                                    <TableCell className="text-slate-500 text-xs">
-                                        {format(new Date(org.created_at), 'MMM d, yyyy')}
-                                    </TableCell>
-                                    <TableCell className="text-right space-x-2">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => router.push(`/admin/clients/${org.id}/members`)}
-                                            className="text-slate-500 hover:text-slate-700 hover:bg-slate-50"
-                                            title="View Members"
-                                        >
-                                            <UsersIcon className="h-4 w-4" />
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => openEditDialog(org)}
-                                            className="text-slate-500 hover:text-slate-700 hover:bg-slate-50"
-                                        >
-                                            <Pencil className="h-4 w-4" />
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleDelete(org.id)}
-                                            className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                    </TableCell>
+                <TabsContent value="organizations" className="flex-1 mt-0">
+                    <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+                        <div className="p-4 border-b border-slate-200">
+                            <div className="relative max-w-sm">
+                                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                                <Input
+                                    placeholder="Search by name or code..."
+                                    className="pl-9 bg-gray-50 border-slate-200"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <Table>
+                            <TableHeader className="bg-gray-50">
+                                <TableRow>
+                                    <TableHead className="font-bold uppercase tracking-wider text-xs">Name</TableHead>
+                                    <TableHead className="font-bold uppercase tracking-wider text-xs">Access Code</TableHead>
+                                    <TableHead className="font-bold uppercase tracking-wider text-xs">LTV</TableHead>
+                                    <TableHead className="font-bold uppercase tracking-wider text-xs">Created At</TableHead>
+                                    <TableHead className="text-right font-bold uppercase tracking-wider text-xs">Actions</TableHead>
                                 </TableRow>
-                            );
-                        })}
-                    </TableBody>
-                </Table>
-                {filteredOrgs.length === 0 && (
-                    <div className="p-12 text-center text-slate-500 text-sm">
-                        No clients found matching your search.
+                            </TableHeader>
+                            <TableBody>
+                                {filteredOrgs.map((org) => {
+                                    const ltv = orders
+                                        .filter(o => o.organization_id === org.id)
+                                        .reduce((sum, o) => sum + (o.price || 0), 0);
+
+                                    return (
+                                        <TableRow key={org.id}>
+                                            <TableCell className="font-medium text-slate-900">{org.name}</TableCell>
+                                            <TableCell>
+                                                <code className="bg-gray-100 px-2 py-1 rounded text-xs font-mono border border-slate-200 text-slate-600">
+                                                    {org.access_code}
+                                                </code>
+                                            </TableCell>
+                                            <TableCell className="font-medium text-slate-900">
+                                                ${ltv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </TableCell>
+                                            <TableCell className="text-slate-500 text-xs">
+                                                {format(new Date(org.created_at), 'MMM d, yyyy')}
+                                            </TableCell>
+                                            <TableCell className="text-right space-x-2">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => router.push(`/admin/clients/${org.id}/members`)}
+                                                    className="text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                                                    title="View Members"
+                                                >
+                                                    <UsersIcon className="h-4 w-4" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => openEditDialog(org)}
+                                                    className="text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                                                >
+                                                    <Pencil className="h-4 w-4" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleDelete(org.id)}
+                                                    className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            </TableCell>
+                                        </TableRow>
+                                    );
+                                })}
+                            </TableBody>
+                        </Table>
+                        {filteredOrgs.length === 0 && (
+                            <div className="p-12 text-center text-slate-500 text-sm">
+                                No clients found matching your search.
+                            </div>
+                        )}
                     </div>
-                )}
-            </div>
+                </TabsContent>
+
+                <TabsContent value="members" className="flex-1 mt-0">
+                    <ActiveMembersTable />
+                </TabsContent>
+            </Tabs>
+        </div>
+    );
+}
+
+function ActiveMembersTable() {
+    const supabase = createClient();
+    const [members, setMembers] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchMembers = async () => {
+            const { data } = await supabase
+                .from('profiles')
+                .select(`
+                    id,
+                    full_name,
+                    email,
+                    role,
+                    phone_number,
+                    created_at,
+                    organization_members (
+                        organizations (
+                            name
+                        )
+                    )
+                `)
+                .order('created_at', { ascending: false });
+
+            if (data) setMembers(data);
+            setLoading(false);
+        };
+        fetchMembers();
+    }, [supabase]);
+
+    if (loading) return <div className="p-8 text-center text-slate-400">Loading members...</div>;
+
+    return (
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+            <Table>
+                <TableHeader className="bg-gray-50">
+                    <TableRow>
+                        <TableHead className="font-bold uppercase tracking-wider text-xs">Name</TableHead>
+                        <TableHead className="font-bold uppercase tracking-wider text-xs">Email</TableHead>
+                        <TableHead className="font-bold uppercase tracking-wider text-xs">Phone</TableHead>
+                        <TableHead className="font-bold uppercase tracking-wider text-xs">Organization</TableHead>
+                        <TableHead className="font-bold uppercase tracking-wider text-xs">Joined</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {members.map((member) => (
+                        <TableRow key={member.id}>
+                            <TableCell className="font-medium text-slate-900">{member.full_name || "N/A"}</TableCell>
+                            <TableCell className="text-slate-600 font-mono text-xs">{member.email}</TableCell>
+                            <TableCell className="text-slate-600 text-xs">{member.phone_number || "-"}</TableCell>
+                            <TableCell>
+                                {member.organization_members && member.organization_members[0]?.organizations ? (
+                                    <Badge variant="outline" className="font-normal text-slate-600 bg-slate-50">
+                                        {member.organization_members[0].organizations.name}
+                                    </Badge>
+                                ) : (
+                                    <span className="text-slate-400 text-xs italic">No Org</span>
+                                )}
+                            </TableCell>
+                            <TableCell className="text-slate-500 text-xs">
+                                {format(new Date(member.created_at), 'MMM d, yyyy')}
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
+            {members.length === 0 && (
+                <div className="p-12 text-center text-slate-500 text-sm">
+                    No active members found.
+                </div>
+            )}
         </div>
     );
 }

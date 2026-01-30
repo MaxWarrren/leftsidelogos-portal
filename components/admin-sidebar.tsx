@@ -71,11 +71,6 @@ const items = [
         url: "/admin/messages",
         icon: MessageSquare,
     },
-    {
-        title: "Global Chat",
-        url: "/admin/messages",
-        icon: MessageSquare,
-    },
 ];
 
 export function AdminSidebar() {
@@ -128,10 +123,18 @@ export function AdminSidebar() {
 
         setHasUnread(unreadMessages);
 
-        // Media unread check: Just check if any files were uploaded by customers recently
+        // Media Unread Check:
+        // Ideally we'd have a 'media_reads' table.
+        // For now, let's use a simpler heuristic:
+        // If there is ANY media uploaded by a customer in the last 24 hours, show the dot.
+        // This avoids the "persistent dot" issue for old files.
+        const oneDayAgo = new Date();
+        oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+
         const { count: mediaCount } = await supabase.from('media_items')
             .select('id', { count: 'exact', head: true })
-            .not('uploader_id', 'eq', user.id);
+            .not('uploader_id', 'eq', user.id) // Not uploaded by admin
+            .gt('created_at', oneDayAgo.toISOString()); // Created in last 24h
 
         setHasUnreadMedia((mediaCount || 0) > 0);
     }, [supabase]);
