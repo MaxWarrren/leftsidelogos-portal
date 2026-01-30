@@ -1,6 +1,6 @@
 import { createClient } from "@/utils/supabase/server";
 import { ContactsTable } from "@/components/crm/customers-table";
-import { ContactsTable } from "@/components/crm/customers-table";
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default async function CrmPage() {
