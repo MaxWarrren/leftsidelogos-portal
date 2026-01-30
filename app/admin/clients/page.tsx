@@ -464,7 +464,6 @@ function ActiveMembersTable() {
                     full_name,
                     email,
                     role,
-                    phone_number,
                     created_at,
                     organization_members (
                         organizations (
@@ -489,7 +488,6 @@ function ActiveMembersTable() {
                     <TableRow>
                         <TableHead className="font-bold uppercase tracking-wider text-xs">Name</TableHead>
                         <TableHead className="font-bold uppercase tracking-wider text-xs">Email</TableHead>
-                        <TableHead className="font-bold uppercase tracking-wider text-xs">Phone</TableHead>
                         <TableHead className="font-bold uppercase tracking-wider text-xs">Organization</TableHead>
                         <TableHead className="font-bold uppercase tracking-wider text-xs">Joined</TableHead>
                     </TableRow>
@@ -499,7 +497,6 @@ function ActiveMembersTable() {
                         <TableRow key={member.id}>
                             <TableCell className="font-medium text-slate-900">{member.full_name || "N/A"}</TableCell>
                             <TableCell className="text-slate-600 font-mono text-xs">{member.email}</TableCell>
-                            <TableCell className="text-slate-600 text-xs">{member.phone_number || "-"}</TableCell>
                             <TableCell>
                                 {member.organization_members && member.organization_members[0]?.organizations ? (
                                     <Badge variant="outline" className="font-normal text-slate-600 bg-slate-50">
