@@ -72,6 +72,7 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
         email: '',
         phone: '',
         organization_id: 'none',
+        company: '',
         status: 'new' // Keeping status in DB but not exposing in UI heavily
     });
     const router = useRouter();
@@ -119,6 +120,7 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
                 email: customer.email,
                 phone: customer.phone || '',
                 organization_id: customer.organization_id || 'none',
+                company: customer.company || '',
                 status: customer.status
             });
         } else {
@@ -128,6 +130,7 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
                 email: '',
                 phone: '',
                 organization_id: 'none',
+                company: '',
                 status: 'new'
             });
         }
@@ -146,6 +149,7 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
             email: formData.email,
             phone: formData.phone,
             organization_id: formData.organization_id === 'none' ? null : formData.organization_id,
+            company: formData.organization_id === 'none' ? formData.company : null,
         };
 
         let result;
@@ -289,7 +293,7 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
                                 />
                             </div>
                             <div className="grid gap-2">
-                                <Label>Organization</Label>
+                                <Label>Organization / Company</Label>
                                 <Select
                                     value={formData.organization_id}
                                     onValueChange={val => setFormData({ ...formData, organization_id: val })}
@@ -298,13 +302,26 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
                                         <SelectValue placeholder="Select Organization" />
                                     </SelectTrigger>
                                     <SelectContent className="bg-white">
-                                        <SelectItem value="none">No Organization</SelectItem>
+                                        <SelectItem value="none">New Lead (No Portal Access)</SelectItem>
                                         {organizations.map(org => (
                                             <SelectItem key={org.id} value={org.id}>{org.name}</SelectItem>
                                         ))}
                                     </SelectContent>
                                 </Select>
                             </div>
+
+                            {formData.organization_id === 'none' && (
+                                <div className="grid gap-2">
+                                    <Label htmlFor="form-company">Company Name</Label>
+                                    <Input
+                                        id="form-company"
+                                        value={formData.company}
+                                        onChange={e => setFormData({ ...formData, company: e.target.value })}
+                                        className="border-slate-200"
+                                        placeholder="Acme Corp"
+                                    />
+                                </div>
+                            )}
                         </div>
                         <div className="flex justify-end gap-3">
                             <Button variant="outline" onClick={() => setIsFormOpen(false)}>Cancel</Button>

@@ -37,6 +37,7 @@ import Image from "next/image";
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { toast } from "sonner";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
 // Admin Menu items.
@@ -236,7 +237,7 @@ export function AdminSidebar() {
                                             asChild
                                             className="group/item h-16 w-full justify-center transition-all hover:bg-slate-100 active:scale-95"
                                         >
-                                            <a href={item.url} className="flex flex-col items-center justify-center gap-2 h-full relative">
+                                            <Link href={item.url} className="flex flex-col items-center justify-center gap-2 h-full relative">
                                                 <item.icon className="h-7 w-7 text-slate-500 group-hover/item:text-slate-900 transition-colors" />
                                                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 group-hover/item:text-slate-900 transition-colors">{item.title}</span>
                                                 {item.title === "Global Chat" && hasUnread && (
@@ -245,7 +246,7 @@ export function AdminSidebar() {
                                                 {item.title === "Media" && hasUnreadMedia && (
                                                     <span className="absolute top-2 right-4 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />
                                                 )}
-                                            </a>
+                                            </Link>
                                         </SidebarMenuButton>
                                     </SidebarMenuItem>
                                 ))}
