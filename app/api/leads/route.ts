@@ -1,4 +1,4 @@
-import { createClient } from '@/utils/supabase/server';
+import { createAdminClient } from '@/utils/supabase/admin';
 import { NextResponse } from 'next/server';
 
 const corsHeaders = {
@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     // Handle Pre-flight / OPTIONS checks inside POST if needed, but the separate OPTIONS export handles it.
     // We strictly need to return CORS headers with the POST response too.
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     let formData;
     try {
