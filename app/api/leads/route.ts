@@ -11,7 +11,16 @@ export async function POST(request: Request) {
     // Handle Pre-flight / OPTIONS checks inside POST if needed, but the separate OPTIONS export handles it.
     // We strictly need to return CORS headers with the POST response too.
 
-    const supabase = createAdminClient();
+    let supabase;
+    try {
+        supabase = createAdminClient();
+    } catch (e: any) {
+        console.error("Supabase Admin Client Error:", e);
+        return NextResponse.json(
+            { error: "Server Configuration Error" },
+            { status: 500, headers: corsHeaders }
+        );
+    }
 
     let formData;
     try {
