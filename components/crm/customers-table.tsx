@@ -94,8 +94,16 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
         if (orgs) setOrganizations(orgs);
 
         if (!isLeadsView) {
-            const { data: profs } = await supabase.from('profiles').select('id, full_name, email, organization_id').order('full_name');
-            if (profs) setProfiles(profs);
+            console.log("Fetching profiles...");
+            const { data: profs, error } = await supabase.from('profiles').select('id, full_name, email, organization_id').order('full_name');
+            if (error) {
+                console.error("Error fetching profiles:", error);
+                toast.error("Failed to load user profiles");
+            }
+            if (profs) {
+                console.log("Profiles loaded:", profs.length);
+                setProfiles(profs);
+            }
         }
     };
 
@@ -571,13 +579,16 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
                     </DialogHeader>
 
                     {selectedCustomer && (
-                        <ScrollArea className="flex-1 pr-4">
+                        <div className="flex-1 overflow-y-auto pr-4">
                             {selectedCustomer.file_paths && selectedCustomer.file_paths.length > 0 && (
                                 <div className="mb-8">
                                     <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-4">Attachments</h3>
                                     <div className="flex flex-wrap gap-2">
                                         {selectedCustomer.file_paths.map((path, idx) => {
+                                            // Get Public URL
                                             const { data } = supabase.storage.from('leads-attachments').getPublicUrl(path);
+                                            // Log for debugging
+                                            console.log(`Attachment ${idx}:`, path, data.publicUrl);
                                             return (
                                                 <a
                                                     key={idx}
@@ -638,13 +649,13 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
                                             ))}
                                         </div>
                                     ) : (
-                                        <pre className="text-xs font-mono text-slate-600 whitespace-pre-wrap">
+                                        <pre className="text-xs font-mono text-slate-600 whitespace-pre-wrap break-all">
                                             {JSON.stringify(selectedCustomer.details, null, 2)}
                                         </pre>
                                     )}
                                 </div>
                             </div>
-                        </ScrollArea>
+                        </div>
                     )}
                 </DialogContent>
             </Dialog>
