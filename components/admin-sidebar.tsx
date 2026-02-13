@@ -7,7 +7,10 @@ import {
     FileText,
     Clock,
     Settings,
-    Image as ImageIcon,
+    FileText as FileIcon,
+    Building2,
+    Briefcase,
+    AppWindow,
 } from "lucide-react";
 
 import {
@@ -48,14 +51,14 @@ const items = [
         icon: LayoutDashboard,
     },
     {
-        title: "Organizations",
+        title: "Portal Manager",
         url: "/admin/clients",
-        icon: Users,
+        icon: AppWindow,
     },
     {
         title: "CRM",
         url: "/admin/crm",
-        icon: Users,
+        icon: Briefcase,
     },
     {
         title: "All Orders",
@@ -65,7 +68,7 @@ const items = [
     {
         title: "Media",
         url: "/admin/media",
-        icon: ImageIcon,
+        icon: FileIcon,
     },
     {
         title: "Global Chat",

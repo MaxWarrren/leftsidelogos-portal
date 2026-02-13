@@ -5,7 +5,7 @@ import {
     MessageSquare,
     FileText,
     Clock,
-    Image as ImageIcon,
+    FileText as FileIcon,
     Settings,
 } from "lucide-react";
 import Image from "next/image";
@@ -60,7 +60,7 @@ const items = [
     {
         title: "Media",
         url: "/media",
-        icon: ImageIcon,
+        icon: FileIcon,
     },
 ];
 

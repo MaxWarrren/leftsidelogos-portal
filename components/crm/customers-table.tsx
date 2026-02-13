@@ -483,7 +483,12 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
                                                         <Mail size={10} className="mr-1" />
                                                         Invited
                                                     </Badge>
-                                                ) : null}
+                                                ) : (
+                                                    <Badge variant="outline" className="text-[10px] h-5 px-1 bg-blue-50 text-blue-700 border-blue-200">
+                                                        <FileText size={10} className="mr-1" />
+                                                        General
+                                                    </Badge>
+                                                )}
                                             </div>
                                             <span className="text-xs text-slate-500">{customer.email}</span>
                                         </div>
