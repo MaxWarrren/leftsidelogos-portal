@@ -36,8 +36,13 @@ export async function POST(req: NextRequest) {
         if (organizationId && data.user) {
             const { error: profileError } = await adminSupabase
                 .from('profiles')
-                .update({ organization_id: organizationId })
-                .eq('id', data.user.id);
+                .upsert({
+                    id: data.user.id,
+                    email: email,
+                    full_name: name || '',
+                    organization_id: organizationId
+                })
+                .select();
 
             if (profileError) {
                 console.error("Profile Update Error:", profileError);

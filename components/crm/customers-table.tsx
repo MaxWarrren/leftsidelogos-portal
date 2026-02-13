@@ -626,14 +626,14 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
                             {/* Order Details Render */}
                             <div>
                                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-4">Formatted Order Details</h3>
-                                <div className="bg-slate-50 rounded-xl p-6 border border-slate-100">
+                                <div className="bg-slate-50 rounded-xl p-6 border border-slate-100 overflow-x-auto">
                                     {/* Simple formatted list based on details JSON */}
                                     {selectedCustomer.details && typeof selectedCustomer.details === 'object' ? (
                                         <div className="space-y-2 text-sm">
                                             {Object.entries(selectedCustomer.details).map(([key, value]) => (
                                                 <div key={key} className="grid grid-cols-3 gap-4 border-b border-slate-200 pb-2 last:border-0 last:pb-0">
-                                                    <span className="font-medium text-slate-700 capitalize col-span-1">{key.replace(/_/g, ' ')}</span>
-                                                    <span className="text-slate-600 col-span-2">{String(value)}</span>
+                                                    <span className="font-medium text-slate-700 capitalize col-span-1 truncate" title={key.replace(/_/g, ' ')}>{key.replace(/_/g, ' ')}</span>
+                                                    <span className="text-slate-600 col-span-2 break-words">{String(value)}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -644,7 +644,6 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
                                     )}
                                 </div>
                             </div>
-
                         </ScrollArea>
                     )}
                 </DialogContent>
