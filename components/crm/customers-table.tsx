@@ -52,7 +52,7 @@ const PIPELINE_STAGES = [
     { value: 'lost', label: 'Closed Lost', color: 'bg-gray-100 text-gray-700' },
 ];
 
-export function ContactsTable({ initialCustomers }: { initialCustomers: Customer[] }) {
+export function ContactsTable({ initialCustomers, isLeadsView = false }: { initialCustomers: Customer[], isLeadsView?: boolean }) {
     const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
 
     useEffect(() => {
@@ -60,11 +60,21 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
     }, [initialCustomers]);
 
     const [organizations, setOrganizations] = useState<Organization[]>([]);
+    const [profiles, setProfiles] = useState<any[]>([]); // For linking existing users
     const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
     const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
     const [updating, setUpdating] = useState<string | null>(null);
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+
+    // Invite State
+    const [isInviteOpen, setIsInviteOpen] = useState(false);
+    const [inviteData, setInviteData] = useState({
+        leadId: '',
+        organizationId: '',
+        addToPortal: true,
+        addToContacts: true
+    });
 
     // Form State
     const [formData, setFormData] = useState({
@@ -73,7 +83,8 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
         phone: '',
         organization_id: 'none',
         company: '',
-        status: 'new' // Keeping status in DB but not exposing in UI heavily
+        status: 'contacted', // Default to contacted for new contacts
+        linked_profile_id: 'none'
     });
     const router = useRouter();
     const supabase = createClient();
@@ -81,35 +92,20 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
     const fetchData = async () => {
         const { data: orgs } = await supabase.from('organizations').select('id, name').order('name');
         if (orgs) setOrganizations(orgs);
+
+        if (!isLeadsView) {
+            const { data: profs } = await supabase.from('profiles').select('id, full_name, email, organization_id').order('full_name');
+            if (profs) setProfiles(profs);
+        }
     };
 
     useEffect(() => {
         fetchData();
-    }, []);
+    }, [isLeadsView]);
 
     const getStatusColor = (status: string) => {
         const stage = PIPELINE_STAGES.find(s => s.value === status);
         return stage ? stage.color : 'bg-gray-100 text-gray-700';
-    };
-
-    const updateStatus = async (id: string, newStatus: string) => {
-        setUpdating(id);
-        const { error } = await supabase
-            .from('leads') // Using 'leads' table as the store for customers
-            .update({ status: newStatus })
-            .eq('id', id);
-
-        if (!error) {
-            setCustomers((prev: Customer[]) => prev.map((c: Customer) => c.id === id ? { ...c, status: newStatus } : c));
-            if (selectedCustomer && selectedCustomer.id === id) {
-                setSelectedCustomer({ ...selectedCustomer, status: newStatus });
-            }
-            toast.success("Status updated");
-            router.refresh();
-        } else {
-            toast.error("Failed to update status");
-        }
-        setUpdating(null);
     };
 
     const handleOpenForm = (customer?: Customer) => {
@@ -121,7 +117,8 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
                 phone: customer.phone || '',
                 organization_id: customer.organization_id || 'none',
                 company: customer.company || '',
-                status: customer.status
+                status: customer.status,
+                linked_profile_id: customer.converted_profile_id || 'none'
             });
         } else {
             setEditingCustomer(null);
@@ -131,10 +128,26 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
                 phone: '',
                 organization_id: 'none',
                 company: '',
-                status: 'new'
+                status: 'contacted', // Ensure not 'new'
+                linked_profile_id: 'none'
             });
         }
         setIsFormOpen(true);
+    };
+
+    const handleProfileSelect = (profileId: string) => {
+        setFormData(prev => ({ ...prev, linked_profile_id: profileId }));
+        if (profileId === 'none') return;
+
+        const profile = profiles.find(p => p.id === profileId);
+        if (profile) {
+            setFormData(prev => ({
+                ...prev,
+                name: profile.full_name || prev.name,
+                email: profile.email || prev.email,
+                organization_id: profile.organization_id || prev.organization_id
+            }));
+        }
     };
 
     const handleSubmit = async () => {
@@ -150,6 +163,8 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
             phone: formData.phone,
             organization_id: formData.organization_id === 'none' ? null : formData.organization_id,
             company: formData.organization_id === 'none' ? formData.company : null,
+            converted_profile_id: formData.linked_profile_id === 'none' ? null : formData.linked_profile_id,
+            status: editingCustomer ? formData.status : (formData.status === 'new' ? 'contacted' : formData.status) // Force non-new
         };
 
         let result;
@@ -165,7 +180,6 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
                 .from('leads')
                 .insert({
                     ...payload,
-                    status: 'new',
                     details: { source: 'manual' }
                 })
                 .select('*, organizations(name)')
@@ -206,38 +220,61 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
         setUpdating(null);
     };
 
-    const handleConvert = async (customer: Customer) => {
-        if (!confirm(`Are you sure you want to invite ${customer.email} to the portal?`)) return;
+    // New Invite Logic for Leads
+    const openInviteDialog = (leadId: string, currentOrgId?: string) => {
+        setInviteData({
+            leadId,
+            organizationId: currentOrgId || '',
+            addToPortal: true,
+            addToContacts: true
+        });
+        setIsInviteOpen(true);
+    };
 
-        setUpdating(customer.id);
-        const toastId = toast.loading("Sending invitation...");
+    const handleInviteSubmit = async () => {
+        if (!inviteData.organizationId) {
+            toast.error("Please select an organization first.");
+            return;
+        }
+        setUpdating(inviteData.leadId);
+        const toastId = toast.loading("Processing invitation...");
 
         try {
-            const res = await fetch('/api/admin/convert-lead', {
-                method: 'POST',
-                body: JSON.stringify({
-                    leadId: customer.id,
-                    email: customer.email,
-                    name: customer.name,
-                    organizationId: customer.organization_id
-                })
-            });
+            // Check if we need to invite (Portal User)
+            if (inviteData.addToPortal) {
+                const lead = customers.find(c => c.id === inviteData.leadId);
+                if (!lead) throw new Error("Lead not found");
 
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.error || "Failed to convert");
+                const res = await fetch('/api/admin/invite-user', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        email: lead.email,
+                        name: lead.name,
+                        organizationId: inviteData.organizationId
+                    })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || "Failed to invite user");
+                }
+                const { user } = await res.json();
+
+                // Link profile to lead
+                if (user) {
+                    await supabase.from('leads').update({ converted_profile_id: user.id }).eq('id', inviteData.leadId);
+                }
             }
 
-            const { userId } = await res.json();
+            // Update contact status if requested
+            if (inviteData.addToContacts) {
+                await supabase.from('leads').update({ status: 'contacted', organization_id: inviteData.organizationId }).eq('id', inviteData.leadId);
+            } else {
+                // Just update org
+                await supabase.from('leads').update({ organization_id: inviteData.organizationId }).eq('id', inviteData.leadId);
+            }
 
-            // Update local state
-            setCustomers(prev => prev.map(c => c.id === customer.id ? {
-                ...c,
-                converted_profile_id: userId,
-                status: 'closed'
-            } : c));
-
-            toast.success("User invited successfully!", { id: toastId });
+            toast.success("Processed successfully!", { id: toastId });
+            setIsInviteOpen(false);
             router.refresh();
 
         } catch (error: any) {
@@ -251,84 +288,159 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
     return (
         <>
             <div className="flex justify-end mb-4">
-                <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-                    <Button onClick={() => handleOpenForm()} className="bg-slate-900 text-white hover:bg-slate-800">
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add Contact
-                    </Button>
-                    <DialogContent className="sm:max-w-[500px] bg-white text-slate-900 border-slate-200">
+                {!isLeadsView ? (
+                    <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+                        <Button onClick={() => handleOpenForm()} className="bg-slate-900 text-white hover:bg-slate-800">
+                            <Plus className="mr-2 h-4 w-4" />
+                            Add Contact
+                        </Button>
+                        <DialogContent className="sm:max-w-[500px] bg-white text-slate-900 border-slate-200">
+                            <DialogHeader>
+                                <DialogTitle>{editingCustomer ? 'Edit Contact' : 'Add New Contact'}</DialogTitle>
+                            </DialogHeader>
+                            <div className="grid gap-4 py-4">
+                                <div className="grid gap-2">
+                                    <Label>Link Existing Portal User</Label>
+                                    <Select
+                                        value={formData.linked_profile_id}
+                                        onValueChange={handleProfileSelect}
+                                    >
+                                        <SelectTrigger className="bg-white border-slate-200">
+                                            <SelectValue placeholder="Select User (Optional)" />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-white">
+                                            <SelectItem value="none">None (Manual Entry)</SelectItem>
+                                            {profiles.map(p => (
+                                                <SelectItem key={p.id} value={p.id}>{p.full_name} ({p.email})</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="grid gap-2">
+                                    <Label htmlFor="form-name">Name</Label>
+                                    <Input
+                                        id="form-name"
+                                        value={formData.name}
+                                        onChange={e => setFormData({ ...formData, name: e.target.value })}
+                                        className="border-slate-200"
+                                        placeholder="John Doe"
+                                    />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="form-email">Email</Label>
+                                    <Input
+                                        id="form-email"
+                                        type="email"
+                                        value={formData.email}
+                                        onChange={e => setFormData({ ...formData, email: e.target.value })}
+                                        className="border-slate-200"
+                                        placeholder="john@example.com"
+                                    />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="form-phone">Phone</Label>
+                                    <Input
+                                        id="form-phone"
+                                        value={formData.phone}
+                                        onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                                        className="border-slate-200"
+                                        placeholder="+1 (555) 000-0000"
+                                    />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label>Organization / Company</Label>
+                                    <Select
+                                        value={formData.organization_id}
+                                        onValueChange={val => setFormData({ ...formData, organization_id: val })}
+                                    >
+                                        <SelectTrigger className="bg-white border-slate-200">
+                                            <SelectValue placeholder="Select Organization" />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-white">
+                                            <SelectItem value="none">New Lead (No Portal Access)</SelectItem>
+                                            {organizations.map(org => (
+                                                <SelectItem key={org.id} value={org.id}>{org.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                {formData.organization_id === 'none' && (
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="form-company">Company Name</Label>
+                                        <Input
+                                            id="form-company"
+                                            value={formData.company}
+                                            onChange={e => setFormData({ ...formData, company: e.target.value })}
+                                            className="border-slate-200"
+                                            placeholder="Acme Corp"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                            <div className="flex justify-end gap-3">
+                                <Button variant="outline" onClick={() => setIsFormOpen(false)}>Cancel</Button>
+                                <Button onClick={handleSubmit} className="bg-slate-900 text-white" disabled={isLoading}>
+                                    {isLoading ? "Saving..." : (editingCustomer ? "Save Changes" : "Add Contact")}
+                                </Button>
+                            </div>
+                        </DialogContent>
+                    </Dialog>
+                ) : null}
+
+                {/* Invite Dialog for New Leads */}
+                <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
+                    <DialogContent className="sm:max-w-[425px]">
                         <DialogHeader>
-                            <DialogTitle>{editingCustomer ? 'Edit Contact' : 'Add New Contact'}</DialogTitle>
+                            <DialogTitle>Invite Lead to Portal</DialogTitle>
                         </DialogHeader>
                         <div className="grid gap-4 py-4">
                             <div className="grid gap-2">
-                                <Label htmlFor="form-name">Name</Label>
-                                <Input
-                                    id="form-name"
-                                    value={formData.name}
-                                    onChange={e => setFormData({ ...formData, name: e.target.value })}
-                                    className="border-slate-200"
-                                    placeholder="John Doe"
-                                />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="form-email">Email</Label>
-                                <Input
-                                    id="form-email"
-                                    type="email"
-                                    value={formData.email}
-                                    onChange={e => setFormData({ ...formData, email: e.target.value })}
-                                    className="border-slate-200"
-                                    placeholder="john@example.com"
-                                />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="form-phone">Phone</Label>
-                                <Input
-                                    id="form-phone"
-                                    value={formData.phone}
-                                    onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                                    className="border-slate-200"
-                                    placeholder="+1 (555) 000-0000"
-                                />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label>Organization / Company</Label>
+                                <Label>Select Organization</Label>
                                 <Select
-                                    value={formData.organization_id}
-                                    onValueChange={val => setFormData({ ...formData, organization_id: val })}
+                                    value={inviteData.organizationId}
+                                    onValueChange={(val) => setInviteData(prev => ({ ...prev, organizationId: val }))}
                                 >
-                                    <SelectTrigger className="bg-white border-slate-200">
+                                    <SelectTrigger>
                                         <SelectValue placeholder="Select Organization" />
                                     </SelectTrigger>
-                                    <SelectContent className="bg-white">
-                                        <SelectItem value="none">New Lead (No Portal Access)</SelectItem>
+                                    <SelectContent>
                                         {organizations.map(org => (
                                             <SelectItem key={org.id} value={org.id}>{org.name}</SelectItem>
                                         ))}
                                     </SelectContent>
                                 </Select>
+                                <p className="text-xs text-slate-500">
+                                    Note: You must create an organization first in the Portal Users tab if it doesn't exist.
+                                </p>
                             </div>
-
-                            {formData.organization_id === 'none' && (
-                                <div className="grid gap-2">
-                                    <Label htmlFor="form-company">Company Name</Label>
-                                    <Input
-                                        id="form-company"
-                                        value={formData.company}
-                                        onChange={e => setFormData({ ...formData, company: e.target.value })}
-                                        className="border-slate-200"
-                                        placeholder="Acme Corp"
-                                    />
-                                </div>
-                            )}
+                            <div className="flex items-center space-x-2">
+                                <input
+                                    type="checkbox"
+                                    id="add-portal"
+                                    checked={inviteData.addToPortal}
+                                    onChange={e => setInviteData(prev => ({ ...prev, addToPortal: e.target.checked }))}
+                                    className="rounded border-gray-300 text-slate-900 focus:ring-slate-900"
+                                />
+                                <Label htmlFor="add-portal">Add to Portal Users (Send Invite Email)</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <input
+                                    type="checkbox"
+                                    id="add-contacts"
+                                    checked={inviteData.addToContacts}
+                                    onChange={e => setInviteData(prev => ({ ...prev, addToContacts: e.target.checked }))}
+                                    className="rounded border-gray-300 text-slate-900 focus:ring-slate-900"
+                                />
+                                <Label htmlFor="add-contacts">Add to Contacts List (Mark as Contacted)</Label>
+                            </div>
                         </div>
-                        <div className="flex justify-end gap-3">
-                            <Button variant="outline" onClick={() => setIsFormOpen(false)}>Cancel</Button>
-                            <Button onClick={handleSubmit} className="bg-slate-900 text-white" disabled={isLoading}>
-                                {isLoading ? "Saving..." : (editingCustomer ? "Save Changes" : "Add Contact")}
+                        <DialogFooter>
+                            <Button onClick={handleInviteSubmit} disabled={!!updating}>
+                                {updating ? "Processing..." : "Confirm & Invite"}
                             </Button>
-                        </div>
+                        </DialogFooter>
                     </DialogContent>
                 </Dialog>
             </div>
@@ -340,14 +452,15 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
                             <TableHead>Contact</TableHead>
                             <TableHead>Organization</TableHead>
                             <TableHead>Summary</TableHead>
+                            {isLeadsView && <TableHead>Media</TableHead>}
                             <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {customers.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={5} className="h-24 text-center">
-                                    No contacts found.
+                                <TableCell colSpan={isLeadsView ? 6 : 5} className="h-24 text-center">
+                                    No {isLeadsView ? 'leads' : 'contacts'} found.
                                 </TableCell>
                             </TableRow>
                         ) : (
@@ -376,30 +489,63 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
                                             {customer.phone && <span className="text-[10px] text-slate-400">{customer.phone}</span>}
                                         </div>
                                     </TableCell>
-                                    <TableCell className="max-w-[300px] truncate text-slate-500">
-                                        {customer.summary || 'No summary available.'}
-                                    </TableCell>
-                                    <TableCell className="text-right space-x-1 whitespace-nowrap">
-                                        {!customer.converted_profile_id && (
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={(e) => { e.stopPropagation(); handleConvert(customer); }}
-                                                disabled={updating === customer.id}
-                                                className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
-                                                title="Convert to User"
-                                            >
-                                                {updating === customer.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
-                                            </Button>
-                                        )}
+                                    <TableCell className="max-w-[100px]">
+                                        {/* Summary Icon Logic */}
                                         <Button
                                             variant="ghost"
                                             size="sm"
-                                            onClick={(e) => { e.stopPropagation(); handleOpenForm(customer); }}
-                                            className="text-slate-500 hover:text-slate-900"
+                                            className="h-8 w-8 p-0"
+                                            onClick={(e) => { e.stopPropagation(); setSelectedCustomer(customer); }}
                                         >
-                                            <Pencil className="h-4 w-4" />
+                                            <FileText className="h-4 w-4 text-slate-500" />
                                         </Button>
+                                    </TableCell>
+                                    {isLeadsView && (
+                                        <TableCell>
+                                            <div className="flex -space-x-2 overflow-hidden">
+                                                {customer.file_paths && customer.file_paths.length > 0 ? (
+                                                    customer.file_paths.map((path, idx) => {
+                                                        const { data } = supabase.storage.from('leads-attachments').getPublicUrl(path);
+                                                        return (
+                                                            <a
+                                                                key={idx}
+                                                                href={data.publicUrl}
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                                onClick={e => e.stopPropagation()}
+                                                                className="inline-block h-6 w-6 rounded-full ring-2 ring-white bg-slate-100 flex items-center justify-center transition-transform hover:scale-110"
+                                                                title={`Attachment ${idx + 1}`}
+                                                            >
+                                                                <FileText size={10} className="text-slate-600" />
+                                                            </a>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    <span className="text-xs text-slate-300">-</span>
+                                                )}
+                                            </div>
+                                        </TableCell>
+                                    )}
+                                    <TableCell className="text-right space-x-1 whitespace-nowrap">
+                                        {isLeadsView ? (
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={(e) => { e.stopPropagation(); openInviteDialog(customer.id, customer.organization_id); }}
+                                                className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 border-blue-200"
+                                            >
+                                                Invite
+                                            </Button>
+                                        ) : (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={(e) => { e.stopPropagation(); handleOpenForm(customer); }}
+                                                className="text-slate-500 hover:text-slate-900"
+                                            >
+                                                <Pencil className="h-4 w-4" />
+                                            </Button>
+                                        )}
                                         <Button
                                             variant="ghost"
                                             size="sm"
@@ -420,12 +566,34 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
                 <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                            <span>Contact Details</span>
+                            <span>{isLeadsView ? 'Order Details' : 'Contact Details'}</span>
                         </DialogTitle>
                     </DialogHeader>
 
                     {selectedCustomer && (
                         <ScrollArea className="flex-1 pr-4">
+                            {selectedCustomer.file_paths && selectedCustomer.file_paths.length > 0 && (
+                                <div className="mb-8">
+                                    <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-4">Attachments</h3>
+                                    <div className="flex flex-wrap gap-2">
+                                        {selectedCustomer.file_paths.map((path, idx) => {
+                                            const { data } = supabase.storage.from('leads-attachments').getPublicUrl(path);
+                                            return (
+                                                <a
+                                                    key={idx}
+                                                    href={data.publicUrl}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg text-sm text-slate-600 hover:bg-slate-200 transition-colors"
+                                                >
+                                                    <FileText size={14} />
+                                                    <span>Attachment {idx + 1}</span>
+                                                </a>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
                             <div className="grid grid-cols-2 gap-8 mb-8">
                                 <div>
                                     <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-4">Contact Info</h3>
@@ -442,52 +610,41 @@ export function ContactsTable({ initialCustomers }: { initialCustomers: Customer
                                             <span className="block text-slate-400 text-xs">Phone</span>
                                             <span className="font-medium">{selectedCustomer.phone || 'N/A'}</span>
                                         </div>
-                                        <div>
-                                            <span className="block text-slate-400 text-xs">Organization</span>
-                                            <span className="font-medium">{selectedCustomer.organizations?.name || selectedCustomer.company || 'N/A'}</span>
-                                        </div>
                                     </div>
                                 </div>
                                 <div>
-                                    <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-4">Internal Notes</h3>
-                                    <p className="text-sm text-slate-500 italic">
-                                        Pipeline management is now handled via the Orders/Organizations view.
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="mb-8">
-                                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-4">Summary</h3>
-                                <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-4 rounded-lg">
-                                    {selectedCustomer.summary || "No summary available."}
-                                </p>
-                            </div>
-
-                            {selectedCustomer.file_paths && selectedCustomer.file_paths.length > 0 && (
-                                <div className="mb-8">
-                                    <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-4">Attachments</h3>
-                                    <div className="flex flex-wrap gap-2">
-                                        {selectedCustomer.file_paths.map((path, idx) => (
-                                            <div
-                                                key={idx}
-                                                className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg text-sm text-slate-600"
-                                            >
-                                                <FileText size={14} />
-                                                <span>Attachment {idx + 1}</span>
-                                            </div>
-                                        ))}
+                                    <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-4">Project Info</h3>
+                                    <div>
+                                        <span className="block text-slate-400 text-xs">Description/Summary</span>
+                                        <p className="text-sm text-slate-600 mt-1">
+                                            {selectedCustomer.summary || "No summary available."}
+                                        </p>
                                     </div>
                                 </div>
-                            )}
+                            </div>
 
+                            {/* Order Details Render */}
                             <div>
-                                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-4">Order Specifications</h3>
+                                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-4">Formatted Order Details</h3>
                                 <div className="bg-slate-50 rounded-xl p-6 border border-slate-100">
-                                    <pre className="text-xs font-mono text-slate-600 whitespace-pre-wrap">
-                                        {JSON.stringify(selectedCustomer.details, null, 2)}
-                                    </pre>
+                                    {/* Simple formatted list based on details JSON */}
+                                    {selectedCustomer.details && typeof selectedCustomer.details === 'object' ? (
+                                        <div className="space-y-2 text-sm">
+                                            {Object.entries(selectedCustomer.details).map(([key, value]) => (
+                                                <div key={key} className="grid grid-cols-3 gap-4 border-b border-slate-200 pb-2 last:border-0 last:pb-0">
+                                                    <span className="font-medium text-slate-700 capitalize col-span-1">{key.replace(/_/g, ' ')}</span>
+                                                    <span className="text-slate-600 col-span-2">{String(value)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <pre className="text-xs font-mono text-slate-600 whitespace-pre-wrap">
+                                            {JSON.stringify(selectedCustomer.details, null, 2)}
+                                        </pre>
+                                    )}
                                 </div>
                             </div>
+
                         </ScrollArea>
                     )}
                 </DialogContent>

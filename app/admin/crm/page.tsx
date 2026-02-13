@@ -34,11 +34,11 @@ export default async function CrmPage() {
                 </div>
 
                 <TabsContent value="contacts" className="flex-1 flex flex-col mt-0">
-                    <ContactsTable initialCustomers={contacts} />
+                    <ContactsTable initialCustomers={contacts} isLeadsView={false} />
                 </TabsContent>
 
                 <TabsContent value="new-leads" className="flex-1 flex flex-col mt-0">
-                    <ContactsTable initialCustomers={newLeads} />
+                    <ContactsTable initialCustomers={newLeads} isLeadsView={true} />
                 </TabsContent>
             </Tabs>
         </div>
