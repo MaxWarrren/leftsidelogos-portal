@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
-import { FileText, Loader2, Plus, UserPlus, UserCheck, Pencil, Trash2 } from "lucide-react";
+import { FileText, Loader2, Plus, UserPlus, UserCheck, Pencil, Trash2, Mail } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
@@ -29,6 +29,7 @@ interface Customer {
     email: string;
     phone?: string;
     organization_id?: string;
+    contact_type?: string;
     converted_profile_id?: string | null;
     company: string | null;
     status: string;
@@ -71,9 +72,7 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
     const [isInviteOpen, setIsInviteOpen] = useState(false);
     const [inviteData, setInviteData] = useState({
         leadId: '',
-        organizationId: '',
-        addToPortal: true,
-        addToContacts: true
+        organizationId: ''
     });
 
     // Form State
@@ -84,7 +83,8 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
         organization_id: 'none',
         company: '',
         status: 'contacted', // Default to contacted for new contacts
-        linked_profile_id: 'none'
+        linked_profile_id: 'none',
+        contact_type: 'general'
     });
     const router = useRouter();
     const supabase = createClient();
@@ -126,7 +126,8 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
                 organization_id: customer.organization_id || 'none',
                 company: customer.company || '',
                 status: customer.status,
-                linked_profile_id: customer.converted_profile_id || 'none'
+                linked_profile_id: customer.converted_profile_id || 'none',
+                contact_type: customer.contact_type || 'general'
             });
         } else {
             setEditingCustomer(null);
@@ -137,7 +138,8 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
                 organization_id: 'none',
                 company: '',
                 status: 'contacted', // Ensure not 'new'
-                linked_profile_id: 'none'
+                linked_profile_id: 'none',
+                contact_type: 'general'
             });
         }
         setIsFormOpen(true);
@@ -172,7 +174,8 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
             organization_id: formData.organization_id === 'none' ? null : formData.organization_id,
             company: formData.organization_id === 'none' ? formData.company : null,
             converted_profile_id: formData.linked_profile_id === 'none' ? null : formData.linked_profile_id,
-            status: editingCustomer ? formData.status : (formData.status === 'new' ? 'contacted' : formData.status) // Force non-new
+            status: editingCustomer ? formData.status : (formData.status === 'new' ? 'contacted' : formData.status), // Force non-new
+            contact_type: formData.contact_type
         };
 
         let result;
@@ -232,9 +235,7 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
     const openInviteDialog = (leadId: string, currentOrgId?: string) => {
         setInviteData({
             leadId,
-            organizationId: currentOrgId || '',
-            addToPortal: true,
-            addToContacts: true
+            organizationId: currentOrgId || ''
         });
         setIsInviteOpen(true);
     };
@@ -245,43 +246,34 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
             return;
         }
         setUpdating(inviteData.leadId);
-        const toastId = toast.loading("Processing invitation...");
+        const toastId = toast.loading("Sending invitation...");
 
         try {
-            // Check if we need to invite (Portal User)
-            if (inviteData.addToPortal) {
-                const lead = customers.find(c => c.id === inviteData.leadId);
-                if (!lead) throw new Error("Lead not found");
+            const lead = customers.find(c => c.id === inviteData.leadId);
+            if (!lead) throw new Error("Lead not found");
 
-                const res = await fetch('/api/admin/invite-user', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        email: lead.email,
-                        name: lead.name,
-                        organizationId: inviteData.organizationId
-                    })
-                });
-                if (!res.ok) {
-                    const err = await res.json();
-                    throw new Error(err.error || "Failed to invite user");
-                }
-                const { user } = await res.json();
-
-                // Link profile to lead
-                if (user) {
-                    await supabase.from('leads').update({ converted_profile_id: user.id }).eq('id', inviteData.leadId);
-                }
+            const res = await fetch('/api/admin/invite-user', {
+                method: 'POST',
+                body: JSON.stringify({
+                    email: lead.email,
+                    name: lead.name,
+                    organizationId: inviteData.organizationId
+                })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || "Failed to invite user");
             }
+            const { user } = await res.json();
 
-            // Update contact status if requested
-            if (inviteData.addToContacts) {
-                await supabase.from('leads').update({ status: 'contacted', organization_id: inviteData.organizationId }).eq('id', inviteData.leadId);
-            } else {
-                // Just update org
-                await supabase.from('leads').update({ organization_id: inviteData.organizationId }).eq('id', inviteData.leadId);
-            }
+            // API handles the leads update, but we update local state for immediate feedback
+            setCustomers(prev => prev.map(c =>
+                c.id === inviteData.leadId
+                    ? { ...c, contact_type: 'invited', status: 'contacted', organization_id: inviteData.organizationId, converted_profile_id: user?.id }
+                    : c
+            ));
 
-            toast.success("Processed successfully!", { id: toastId });
+            toast.success("Invitation sent successfully!", { id: toastId });
             setIsInviteOpen(false);
             router.refresh();
 
@@ -386,6 +378,23 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
                                         />
                                     </div>
                                 )}
+
+                                <div className="grid gap-2">
+                                    <Label>Contact Type</Label>
+                                    <Select
+                                        value={formData.contact_type}
+                                        onValueChange={val => setFormData({ ...formData, contact_type: val })}
+                                    >
+                                        <SelectTrigger className="bg-white border-slate-200">
+                                            <SelectValue placeholder="Select Type" />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-white">
+                                            <SelectItem value="general">General Contact</SelectItem>
+                                            <SelectItem value="invited">Invited</SelectItem>
+                                            <SelectItem value="user">Portal User</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
                             </div>
                             <div className="flex justify-end gap-3">
                                 <Button variant="outline" onClick={() => setIsFormOpen(false)}>Cancel</Button>
@@ -423,30 +432,13 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
                                     Note: You must create an organization first in the Portal Users tab if it doesn't exist.
                                 </p>
                             </div>
-                            <div className="flex items-center space-x-2">
-                                <input
-                                    type="checkbox"
-                                    id="add-portal"
-                                    checked={inviteData.addToPortal}
-                                    onChange={e => setInviteData(prev => ({ ...prev, addToPortal: e.target.checked }))}
-                                    className="rounded border-gray-300 text-slate-900 focus:ring-slate-900"
-                                />
-                                <Label htmlFor="add-portal">Add to Portal Users (Send Invite Email)</Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                                <input
-                                    type="checkbox"
-                                    id="add-contacts"
-                                    checked={inviteData.addToContacts}
-                                    onChange={e => setInviteData(prev => ({ ...prev, addToContacts: e.target.checked }))}
-                                    className="rounded border-gray-300 text-slate-900 focus:ring-slate-900"
-                                />
-                                <Label htmlFor="add-contacts">Add to Contacts List (Mark as Contacted)</Label>
+                            <div className="p-3 bg-blue-50 text-blue-800 rounded-md text-sm border border-blue-100">
+                                This will send an invitation email with the access code to the lead and mark them as <strong>Invited</strong>.
                             </div>
                         </div>
                         <DialogFooter>
-                            <Button onClick={handleInviteSubmit} disabled={!!updating}>
-                                {updating ? "Processing..." : "Confirm & Invite"}
+                            <Button onClick={handleInviteSubmit} disabled={!!updating} className="bg-slate-900 text-white">
+                                {updating ? "Sending..." : "Send Invitation"}
                             </Button>
                         </DialogFooter>
                     </DialogContent>
@@ -481,12 +473,17 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
                                         <div className="flex flex-col">
                                             <div className="flex items-center gap-2">
                                                 <span className="font-medium">{customer.name}</span>
-                                                {customer.converted_profile_id && (
+                                                {(customer.contact_type === 'user' || customer.converted_profile_id) ? (
                                                     <Badge variant="outline" className="text-[10px] h-5 px-1 bg-green-50 text-green-700 border-green-200">
                                                         <UserCheck size={10} className="mr-1" />
                                                         User
                                                     </Badge>
-                                                )}
+                                                ) : customer.contact_type === 'invited' ? (
+                                                    <Badge variant="outline" className="text-[10px] h-5 px-1 bg-purple-50 text-purple-700 border-purple-200">
+                                                        <Mail size={10} className="mr-1" />
+                                                        Invited
+                                                    </Badge>
+                                                ) : null}
                                             </div>
                                             <span className="text-xs text-slate-500">{customer.email}</span>
                                         </div>
@@ -540,19 +537,33 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
                                                 variant="outline"
                                                 size="sm"
                                                 onClick={(e) => { e.stopPropagation(); openInviteDialog(customer.id, customer.organization_id); }}
-                                                className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 border-blue-200"
                                             >
-                                                Invite
+                                                <Mail className="h-4 w-4" />
                                             </Button>
                                         ) : (
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={(e) => { e.stopPropagation(); handleOpenForm(customer); }}
-                                                className="text-slate-500 hover:text-slate-900"
-                                            >
-                                                <Pencil className="h-4 w-4" />
-                                            </Button>
+                                            <>
+                                                {/* Invite icon for existing general contacts */}
+                                                {(customer.contact_type !== 'user' && customer.contact_type !== 'invited' && !customer.converted_profile_id) && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={(e) => { e.stopPropagation(); openInviteDialog(customer.id, customer.organization_id); }}
+                                                        className="text-slate-500 hover:text-slate-900"
+                                                        title="Invite to Portal"
+                                                    >
+                                                        <Mail className="h-4 w-4" />
+                                                    </Button>
+                                                )}
+
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={(e) => { e.stopPropagation(); handleOpenForm(customer); }}
+                                                    className="text-slate-500 hover:text-slate-900"
+                                                >
+                                                    <Pencil className="h-4 w-4" />
+                                                </Button>
+                                            </>
                                         )}
                                         <Button
                                             variant="ghost"

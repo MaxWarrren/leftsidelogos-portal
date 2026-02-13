@@ -485,6 +485,7 @@ function ActiveMembersTable() {
                     )
                 )
             `)
+            .eq('status', 'active') // Filter only active users
             .order('created_at', { ascending: false });
 
         if (memberData) setMembers(memberData);

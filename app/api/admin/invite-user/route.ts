@@ -20,10 +20,26 @@ export async function POST(req: NextRequest) {
 
         const adminSupabase = createAdminClient();
 
-        // 1. Invite the user
+        // 1. Fetch Organization Access Code
+        let accessCode = '';
+        if (organizationId) {
+            const { data: orgData, error: orgError } = await adminSupabase
+                .from('organizations')
+                .select('access_code')
+                .eq('id', organizationId)
+                .single();
+
+            if (orgData) {
+                accessCode = orgData.access_code;
+            }
+        }
+
+        // 2. Invite the user
         const { data, error: inviteError } = await adminSupabase.auth.admin.inviteUserByEmail(email, {
             data: {
                 full_name: name || '',
+                access_code: accessCode,
+                organization_id: organizationId // Helpful metadata
             }
         });
 
@@ -32,21 +48,37 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: inviteError.message }, { status: 500 });
         }
 
-        // 2. If organization provided, link them (Update profile)
-        if (organizationId && data.user) {
+        // 3. Link them (Update profile) - Set status to 'invited'
+        if (data.user) {
             const { error: profileError } = await adminSupabase
                 .from('profiles')
                 .upsert({
                     id: data.user.id,
                     email: email,
                     full_name: name || '',
-                    organization_id: organizationId
+                    organization_id: organizationId || null,
+                    status: 'invited' // Explicitly set to invited
                 })
                 .select();
 
             if (profileError) {
                 console.error("Profile Update Error:", profileError);
-                // Non-fatal, return success with warning optionally
+            }
+
+            // 4. Update Leads if exists
+            // Check if lead exists with this email
+            const { error: leadError } = await adminSupabase
+                .from('leads')
+                .update({
+                    contact_type: 'invited',
+                    status: 'contacted', // Ensure validation
+                    organization_id: organizationId || null,
+                    converted_profile_id: data.user.id
+                })
+                .eq('email', email);
+
+            if (leadError) {
+                console.error("Lead Update Error:", leadError);
             }
         }
 
