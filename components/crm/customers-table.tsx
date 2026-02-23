@@ -216,15 +216,31 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
 
     const handleDelete = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (!confirm("Are you sure you want to delete this contact?")) return;
+
+        const entityLabel = isLeadsView ? 'lead' : 'contact';
+        if (!confirm(`Are you sure you want to delete this ${entityLabel}?`)) return;
 
         setUpdating(id);
+
+        const customerToDelete = customers.find(c => c.id === id);
+
+        if (customerToDelete?.file_paths && customerToDelete.file_paths.length > 0) {
+            const { error: storageError } = await supabase.storage
+                .from('leads-attachments')
+                .remove(customerToDelete.file_paths);
+
+            if (storageError) {
+                console.error("Error deleting files:", storageError);
+                toast.error("Failed to delete attachments");
+            }
+        }
+
         const { error } = await supabase.from('leads').delete().eq('id', id);
 
         if (error) {
-            toast.error("Failed to delete contact");
+            toast.error(`Failed to delete ${entityLabel}`);
         } else {
-            toast.success("Contact deleted");
+            toast.success(`${entityLabel.charAt(0).toUpperCase() + entityLabel.slice(1)} deleted`);
             setCustomers(customers.filter(c => c.id !== id));
             router.refresh();
         }
@@ -473,7 +489,7 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
                                         <div className="flex flex-col">
                                             <div className="flex items-center gap-2">
                                                 <span className="font-medium">{customer.name}</span>
-                                                {(customer.contact_type === 'user' || customer.converted_profile_id) ? (
+                                                {customer.contact_type === 'user' ? (
                                                     <Badge variant="outline" className="text-[10px] h-5 px-1 bg-green-50 text-green-700 border-green-200">
                                                         <UserCheck size={10} className="mr-1" />
                                                         User

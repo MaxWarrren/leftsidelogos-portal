@@ -62,11 +62,18 @@ export default function AdminDashboardPage() {
         ]);
 
         // 5. Recent Activity
-        const { data: recent } = await supabase
+        let recentQuery = supabase
             .from('messages')
             .select('*, organizations(name), profiles(full_name)')
             .order('created_at', { ascending: false })
             .limit(5);
+
+        const clearedUntilStr = typeof window !== 'undefined' ? localStorage.getItem('activityClearedUntil') : null;
+        if (clearedUntilStr) {
+            recentQuery = recentQuery.gt('created_at', clearedUntilStr);
+        }
+
+        const { data: recent } = await recentQuery;
 
         if (recent) setRecentActivity(recent);
 
@@ -100,7 +107,9 @@ export default function AdminDashboardPage() {
 
     const handleClearActivity = () => {
         setRecentActivity([]);
-        // Ideally save this preference or timestamp, but for now just clear local state for the session/view
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('activityClearedUntil', new Date().toISOString());
+        }
     };
 
     return (

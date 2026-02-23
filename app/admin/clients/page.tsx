@@ -60,6 +60,17 @@ export default function AdminClientsPage() {
     const [newClientCode, setNewClientCode] = useState("");
     const [isLoading, setIsLoading] = useState(false);
 
+    // Tab state
+    const [activeTab, setActiveTab] = useState("organizations");
+    const [refreshMembersCounter, setRefreshMembersCounter] = useState(0);
+
+    // Invite state
+    const [isInviteOpen, setIsInviteOpen] = useState(false);
+    const [inviteEmail, setInviteEmail] = useState("");
+    const [inviteName, setInviteName] = useState("");
+    const [inviteOrgId, setInviteOrgId] = useState("");
+    const [isInviting, setIsInviting] = useState(false);
+
     const fetchData = async () => {
         const { data: orgs } = await supabase.from('organizations').select('*').order('created_at', { ascending: false });
         const { data: ordersData } = await supabase.from('orders').select('id, name, organization_id, price').order('name');
@@ -173,6 +184,41 @@ export default function AdminClientsPage() {
         fetchData();
     };
 
+    const handleInvite = async () => {
+        if (!inviteEmail || !inviteOrgId) {
+            toast.error("Email and Organization are required");
+            return;
+        }
+        setIsInviting(true);
+
+        try {
+            const res = await fetch('/api/admin/invite-user', {
+                method: 'POST',
+                body: JSON.stringify({
+                    email: inviteEmail,
+                    name: inviteName,
+                    organizationId: inviteOrgId
+                })
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || "Failed to invite");
+            }
+
+            toast.success("User invited successfully!");
+            setIsInviteOpen(false);
+            setInviteEmail("");
+            setInviteName("");
+            setInviteOrgId("");
+            setRefreshMembersCounter(prev => prev + 1);
+        } catch (error: any) {
+            toast.error(error.message);
+        } finally {
+            setIsInviting(false);
+        }
+    };
+
     const filteredOrgs = organizations.filter(org =>
         org.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         org.access_code.includes(searchQuery)
@@ -182,96 +228,154 @@ export default function AdminClientsPage() {
         <div className="flex flex-col h-full space-y-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-3xl font-bold text-slate-900">Portal Users</h1>
+                    <h1 className="text-3xl font-bold text-slate-900">Portal Managers</h1>
                     <p className="text-slate-500">Manage client organizations and user access.</p>
                 </div>
-                {/* Add Client Dialog Trigger - kept same for now, will focus on Tabs */}
-                <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-                    <Button onClick={openCreateDialog} className="bg-slate-900 text-white hover:bg-slate-800">
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add Client
-                    </Button>
-                    {/* ... Create Dialog ... */}
-                    <DialogContent className="sm:max-w-[425px] bg-white text-slate-900 border-slate-200">
-                        <DialogHeader>
-                            <DialogTitle>Add New Client (Organization)</DialogTitle>
-                            <DialogDescription>
-                                Create a new organization workspace.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <div className="grid gap-4 py-4">
-                            <div className="grid gap-2">
-                                <Label htmlFor="name">Name</Label>
-                                <Input
-                                    id="name"
-                                    value={newClientName}
-                                    onChange={e => setNewClientName(e.target.value)}
-                                    className="border-slate-200"
-                                    placeholder="Acme Corp"
-                                />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="code">Access Code</Label>
-                                <div className="flex gap-2">
+                {activeTab === 'organizations' ? (
+                    <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+                        <Button onClick={openCreateDialog} className="bg-slate-900 text-white hover:bg-slate-800">
+                            <Plus className="mr-2 h-4 w-4" />
+                            Add Client
+                        </Button>
+                        <DialogContent className="sm:max-w-[425px] bg-white text-slate-900 border-slate-200">
+                            <DialogHeader>
+                                <DialogTitle>Add New Client (Organization)</DialogTitle>
+                                <DialogDescription>
+                                    Create a new organization workspace.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="grid gap-4 py-4">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="name">Name</Label>
                                     <Input
-                                        id="code"
-                                        value={newClientCode}
-                                        onChange={e => setNewClientCode(e.target.value)}
+                                        id="name"
+                                        value={newClientName}
+                                        onChange={e => setNewClientName(e.target.value)}
                                         className="border-slate-200"
-                                        placeholder="1234"
+                                        placeholder="Acme Corp"
                                     />
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        onClick={() => setNewClientCode(Math.floor(1000 + Math.random() * 9000).toString())}
-                                    >
-                                        Gen
-                                    </Button>
                                 </div>
-                            </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="code">Access Code</Label>
+                                    <div className="flex gap-2">
+                                        <Input
+                                            id="code"
+                                            value={newClientCode}
+                                            onChange={e => setNewClientCode(e.target.value)}
+                                            className="border-slate-200"
+                                            placeholder="1234"
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={() => setNewClientCode(Math.floor(1000 + Math.random() * 9000).toString())}
+                                        >
+                                            Gen
+                                        </Button>
+                                    </div>
+                                </div>
 
-                            <div className="grid gap-2">
-                                <Label>Associate Orders</Label>
-                                <div className="border border-slate-200 rounded-md p-2 bg-gray-50">
-                                    <ScrollArea className="h-[120px]">
-                                        <div className="space-y-1">
-                                            {orders.map(order => (
-                                                <div
-                                                    key={order.id}
-                                                    onClick={() => toggleOrderSelection(order.id)}
-                                                    className={cn(
-                                                        "flex items-center justify-between p-2 rounded cursor-pointer transition-colors text-sm",
-                                                        selectedOrderIds.includes(order.id)
-                                                            ? "bg-slate-900 text-white"
-                                                            : "hover:bg-slate-200 text-slate-700"
-                                                    )}
-                                                >
-                                                    <span>{order.name}</span>
-                                                    {selectedOrderIds.includes(order.id) && <Check className="h-4 w-4" />}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </ScrollArea>
-                                </div>
-                                <div className="flex flex-wrap gap-1 mt-1">
-                                    {selectedOrderIds.map(id => {
-                                        const order = orders.find(o => o.id === id);
-                                        return order ? (
-                                            <Badge key={id} variant="secondary" className="text-[10px]">
-                                                {order.name}
-                                            </Badge>
-                                        ) : null;
-                                    })}
+                                <div className="grid gap-2">
+                                    <Label>Associate Orders</Label>
+                                    <div className="border border-slate-200 rounded-md p-2 bg-gray-50">
+                                        <ScrollArea className="h-[120px]">
+                                            <div className="space-y-1">
+                                                {orders.map(order => (
+                                                    <div
+                                                        key={order.id}
+                                                        onClick={() => toggleOrderSelection(order.id)}
+                                                        className={cn(
+                                                            "flex items-center justify-between p-2 rounded cursor-pointer transition-colors text-sm",
+                                                            selectedOrderIds.includes(order.id)
+                                                                ? "bg-slate-900 text-white"
+                                                                : "hover:bg-slate-200 text-slate-700"
+                                                        )}
+                                                    >
+                                                        <span>{order.name}</span>
+                                                        {selectedOrderIds.includes(order.id) && <Check className="h-4 w-4" />}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </ScrollArea>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                        {selectedOrderIds.map(id => {
+                                            const order = orders.find(o => o.id === id);
+                                            return order ? (
+                                                <Badge key={id} variant="secondary" className="text-[10px]">
+                                                    {order.name}
+                                                </Badge>
+                                            ) : null;
+                                        })}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <DialogFooter>
-                            <Button type="submit" disabled={isLoading} onClick={handleCreate} className="bg-slate-900 text-white">
-                                {isLoading ? "Creating..." : "Create Client"}
+                            <DialogFooter>
+                                <Button type="submit" disabled={isLoading} onClick={handleCreate} className="bg-slate-900 text-white">
+                                    {isLoading ? "Creating..." : "Create Client"}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+                ) : (
+                    <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
+                        <DialogTrigger asChild>
+                            <Button className="bg-slate-900 text-white hover:bg-slate-800">
+                                <Plus className="mr-2 h-4 w-4" />
+                                Invite User
                             </Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-[425px] bg-white text-slate-900 border-slate-200">
+                            <DialogHeader>
+                                <DialogTitle>Invite New User</DialogTitle>
+                                <DialogDescription>
+                                    Send an invitation email to a new user.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="grid gap-4 py-4">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="invite-email">Email</Label>
+                                    <Input
+                                        id="invite-email"
+                                        type="email"
+                                        value={inviteEmail}
+                                        onChange={e => setInviteEmail(e.target.value)}
+                                        placeholder="user@example.com"
+                                        className="border-slate-200"
+                                    />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="invite-name">Name (Optional)</Label>
+                                    <Input
+                                        id="invite-name"
+                                        value={inviteName}
+                                        onChange={e => setInviteName(e.target.value)}
+                                        placeholder="John Doe"
+                                        className="border-slate-200"
+                                    />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="invite-org">Organization</Label>
+                                    <select
+                                        className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                        value={inviteOrgId}
+                                        onChange={e => setInviteOrgId(e.target.value)}
+                                    >
+                                        <option value="" disabled>Select an organization</option>
+                                        {organizations.map(org => (
+                                            <option key={org.id} value={org.id}>{org.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                            <DialogFooter>
+                                <Button onClick={handleInvite} disabled={isInviting} className="bg-slate-900 text-white">
+                                    {isInviting ? "Sending..." : "Send Invitation"}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+                )}
 
                 <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
                     <DialogContent className="sm:max-w-[425px] bg-white text-slate-900 border-slate-200">
@@ -354,9 +458,9 @@ export default function AdminClientsPage() {
                 </Dialog>
             </div>
 
-            <Tabs defaultValue="organizations" className="w-full flex-1 flex flex-col">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex-1 flex flex-col">
                 <TabsList className="w-fit mb-4">
-                    <TabsTrigger value="organizations">Portal Users</TabsTrigger>
+                    <TabsTrigger value="organizations">Active Organizations</TabsTrigger>
                     <TabsTrigger value="members">Active Users</TabsTrigger>
                 </TabsList>
 
@@ -444,27 +548,22 @@ export default function AdminClientsPage() {
                 </TabsContent>
 
                 <TabsContent value="members" className="flex-1 mt-0">
-                    <ActiveMembersTable />
+                    <ActiveMembersTable refreshTrigger={refreshMembersCounter} />
                 </TabsContent>
             </Tabs>
-        </div>
+        </div >
     );
 }
 
 // --- Moved ActiveMembersTable inside to a separate component or keep here but enhanced.
 // For simplicity and context, expanding it here.
 
-function ActiveMembersTable() {
+function ActiveMembersTable({ refreshTrigger }: { refreshTrigger: number }) {
     const supabase = createClient();
     const router = useRouter();
     const [members, setMembers] = useState<any[]>([]);
     const [organizations, setOrganizations] = useState<Organization[]>([]);
     const [loading, setLoading] = useState(true);
-    const [isInviteOpen, setIsInviteOpen] = useState(false);
-    const [inviteEmail, setInviteEmail] = useState("");
-    const [inviteName, setInviteName] = useState("");
-    const [inviteOrgId, setInviteOrgId] = useState("");
-    const [isInviting, setIsInviting] = useState(false);
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
     const fetchData = async () => {
@@ -499,42 +598,7 @@ function ActiveMembersTable() {
 
     useEffect(() => {
         fetchData();
-    }, []);
-
-    const handleInvite = async () => {
-        if (!inviteEmail || !inviteOrgId) {
-            toast.error("Email and Organization are required");
-            return;
-        }
-        setIsInviting(true);
-
-        try {
-            const res = await fetch('/api/admin/invite-user', {
-                method: 'POST',
-                body: JSON.stringify({
-                    email: inviteEmail,
-                    name: inviteName,
-                    organizationId: inviteOrgId
-                })
-            });
-
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.error || "Failed to invite");
-            }
-
-            toast.success("User invited successfully!");
-            setIsInviteOpen(false);
-            setInviteEmail("");
-            setInviteName("");
-            setInviteOrgId("");
-            fetchData();
-        } catch (error: any) {
-            toast.error(error.message);
-        } finally {
-            setIsInviting(false);
-        }
-    };
+    }, [refreshTrigger]);
 
     const handleDeleteUser = async (userId: string) => {
         if (!confirm("Are you sure you want to delete this user? This action cannot be undone.")) return;
@@ -569,66 +633,6 @@ function ActiveMembersTable() {
 
     return (
         <div className="space-y-4">
-            <div className="flex justify-end">
-                <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
-                    <DialogTrigger asChild>
-                        <Button className="bg-slate-900 text-white hover:bg-slate-800">
-                            <Plus className="mr-2 h-4 w-4" />
-                            Invite User
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-[425px] bg-white text-slate-900 border-slate-200">
-                        <DialogHeader>
-                            <DialogTitle>Invite New User</DialogTitle>
-                            <DialogDescription>
-                                Send an invitation email to a new user.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <div className="grid gap-4 py-4">
-                            <div className="grid gap-2">
-                                <Label htmlFor="invite-email">Email</Label>
-                                <Input
-                                    id="invite-email"
-                                    type="email"
-                                    value={inviteEmail}
-                                    onChange={e => setInviteEmail(e.target.value)}
-                                    placeholder="user@example.com"
-                                    className="border-slate-200"
-                                />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="invite-name">Name (Optional)</Label>
-                                <Input
-                                    id="invite-name"
-                                    value={inviteName}
-                                    onChange={e => setInviteName(e.target.value)}
-                                    placeholder="John Doe"
-                                    className="border-slate-200"
-                                />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="invite-org">Organization</Label>
-                                <select
-                                    className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                    value={inviteOrgId}
-                                    onChange={e => setInviteOrgId(e.target.value)}
-                                >
-                                    <option value="" disabled>Select an organization</option>
-                                    {organizations.map(org => (
-                                        <option key={org.id} value={org.id}>{org.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-                        <DialogFooter>
-                            <Button onClick={handleInvite} disabled={isInviting} className="bg-slate-900 text-white">
-                                {isInviting ? "Sending..." : "Send Invitation"}
-                            </Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
-            </div>
-
             <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
                 <Table>
                     <TableHeader className="bg-gray-50">

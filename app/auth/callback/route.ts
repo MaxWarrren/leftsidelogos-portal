@@ -9,8 +9,24 @@ export async function GET(request: Request) {
 
     if (code) {
         const supabase = await createClient()
-        const { error } = await supabase.auth.exchangeCodeForSession(code)
-        if (!error) {
+        const { error, data } = await supabase.auth.exchangeCodeForSession(code)
+
+        if (!error && data?.user) {
+            // Check if there is a matching lead for this user's email
+            // and update it if found to mark them as a fully registered user
+            const { error: updateError } = await supabase
+                .from('leads')
+                .update({
+                    contact_type: 'user',
+                    converted_profile_id: data.user.id
+                })
+                .eq('email', data.user.email)
+                .is('converted_profile_id', null); // Only update if not already converted
+
+            if (updateError) {
+                console.error("Failed to link new user to lead:", updateError);
+            }
+
             const forwardedHost = request.headers.get('x-forwarded-host') // original origin before load balancer
             const isLocalEnv = process.env.NODE_ENV === 'development'
             if (isLocalEnv) {
