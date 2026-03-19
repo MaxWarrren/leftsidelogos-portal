@@ -60,10 +60,11 @@ Matches all routes except static assets, images, and favicon.
 - **Client:** Server client
 - **Flow:**
   1. Validate API key from request header
-  2. Parse JSON body (name, email, company, phone, summary, source, details)
-  3. Insert lead record into `leads` table with status `new`
+  2. Parse JSON body (name, email, company, phone, summary, source, details, file_paths)
+  3. Insert lead record into `leads` table with status `new` and `file_paths` array
   4. Return `{ success: true, lead: data }`
 - **Called by:** n8n workflow after receiving webhook from website
+- **File paths:** Supabase Storage public URLs uploaded by the website before the webhook is triggered
 
 ### `POST /api/admin/convert-lead` — Convert Lead to Client
 - **Auth:** Admin only (validated server-side)

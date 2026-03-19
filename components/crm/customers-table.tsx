@@ -531,11 +531,11 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
                                             <div className="flex -space-x-2 overflow-hidden">
                                                 {customer.file_paths && customer.file_paths.length > 0 ? (
                                                     customer.file_paths.map((path, idx) => {
-                                                        const { data } = supabase.storage.from('leads-attachments').getPublicUrl(path);
+                                                        const publicUrl = path.startsWith('https://') ? path : supabase.storage.from('leads-attachments').getPublicUrl(path).data.publicUrl;
                                                         return (
                                                             <a
                                                                 key={idx}
-                                                                href={data.publicUrl}
+                                                                href={publicUrl}
                                                                 target="_blank"
                                                                 rel="noreferrer"
                                                                 onClick={e => e.stopPropagation()}
@@ -617,14 +617,11 @@ export function ContactsTable({ initialCustomers, isLeadsView = false }: { initi
                                     <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-4">Attachments</h3>
                                     <div className="flex flex-wrap gap-2">
                                         {selectedCustomer.file_paths.map((path, idx) => {
-                                            // Get Public URL
-                                            const { data } = supabase.storage.from('leads-attachments').getPublicUrl(path);
-                                            // Log for debugging
-                                            console.log(`Attachment ${idx}:`, path, data.publicUrl);
+                                            const publicUrl = path.startsWith('https://') ? path : supabase.storage.from('leads-attachments').getPublicUrl(path).data.publicUrl;
                                             return (
                                                 <a
                                                     key={idx}
-                                                    href={data.publicUrl}
+                                                    href={publicUrl}
                                                     target="_blank"
                                                     rel="noreferrer"
                                                     className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg text-sm text-slate-600 hover:bg-slate-200 transition-colors"
