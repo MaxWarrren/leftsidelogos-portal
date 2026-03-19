@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
 
     try {
         const body = await req.json();
-        const { name, email, company, phone, summary, source } = body;
+        const { name, email, company, phone, summary, source, file_paths } = body;
 
         // Basic Validation
         if (!name || !email) {
@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
                 company: company || null,
                 phone: phone || null,
                 summary: summary || null,
+                file_paths: file_paths || [],
                 status: 'new',
                 details: {
                     source: source || 'api',
