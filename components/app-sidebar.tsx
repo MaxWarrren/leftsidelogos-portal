@@ -180,21 +180,21 @@ export function AppSidebar({ organizations = [], currentOrgId }: AppSidebarProps
                 <div className="flex flex-1 flex-col items-center justify-start pt-6">
                     <SidebarGroup className="w-full">
                         <SidebarGroupContent>
-                            <SidebarMenu className="gap-8 px-3">
+                            <SidebarMenu className="gap-1 px-3">
                                 {items.map((item) => (
                                     <SidebarMenuItem key={item.title}>
                                         <SidebarMenuButton
                                             asChild
-                                            className="group/item h-16 w-full justify-center transition-all hover:bg-slate-100 active:scale-95"
+                                            className="group/item h-11 w-full transition-all hover:bg-slate-100 active:scale-[0.98] rounded-lg"
                                         >
-                                            <a href={item.url} className="flex flex-col items-center justify-center gap-2 h-full relative">
-                                                <item.icon className="h-7 w-7 text-slate-500 group-hover/item:text-slate-900 transition-colors" />
-                                                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 group-hover/item:text-slate-900 transition-colors">{item.title}</span>
+                                            <a href={item.url} className="flex items-center gap-3 px-3 h-full relative">
+                                                <item.icon className="h-5 w-5 text-slate-400 group-hover/item:text-slate-900 transition-colors shrink-0" />
+                                                <span className="text-sm font-medium text-slate-600 group-hover/item:text-slate-900 transition-colors">{item.title}</span>
                                                 {item.title === "Messages" && hasUnread && (
-                                                    <span className="absolute top-2 right-4 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />
+                                                    <span className="ml-auto h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />
                                                 )}
                                                 {item.title === "Media" && hasUnreadMedia && (
-                                                    <span className="absolute top-2 right-4 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />
+                                                    <span className="ml-auto h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />
                                                 )}
                                             </a>
                                         </SidebarMenuButton>
@@ -211,10 +211,10 @@ export function AppSidebar({ organizations = [], currentOrgId }: AppSidebarProps
                     <SidebarMenuItem>
                         <Dialog>
                             <DialogTrigger asChild>
-                                <SidebarMenuButton className="group/settings h-12 w-full justify-center transition-all hover:bg-slate-100 active:scale-95">
-                                    <div className="flex flex-col items-center justify-center gap-1.5 h-full">
-                                        <Settings className="h-5 w-5 text-slate-500 group-hover/settings:text-slate-900 transition-colors" />
-                                        <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 group-hover/settings:text-slate-900 transition-colors">Settings</span>
+                                <SidebarMenuButton className="group/settings h-11 w-full transition-all hover:bg-slate-100 active:scale-[0.98] rounded-lg">
+                                    <div className="flex items-center gap-3 px-3 h-full">
+                                        <Settings className="h-5 w-5 text-slate-400 group-hover/settings:text-slate-900 transition-colors shrink-0" />
+                                        <span className="text-sm font-medium text-slate-600 group-hover/settings:text-slate-900 transition-colors">Settings</span>
                                     </div>
                                 </SidebarMenuButton>
                             </DialogTrigger>

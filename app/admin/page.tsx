@@ -1,7 +1,7 @@
 "use client";
 
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Users, ShoppingBag, MessageSquare, AlertCircle } from "lucide-react";
+import { Users, ShoppingBag, MessageSquare, Globe } from "lucide-react";
 import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { cn } from "@/lib/utils";
@@ -12,7 +12,7 @@ export default function AdminDashboardPage() {
         { title: "Total Clients", value: "0", icon: Users, color: "text-blue-600" },
         { title: "Active Orders", value: "0", icon: ShoppingBag, color: "text-green-600" },
         { title: "New Messages", value: "0", icon: MessageSquare, color: "text-purple-600" },
-        { title: "New Leads", value: "0", icon: Users, color: "text-orange-600" },
+        { title: "Website Orders", value: "0", icon: Globe, color: "text-orange-600" },
     ]);
 
     const [recentActivity, setRecentActivity] = useState<any[]>([]);
@@ -49,16 +49,17 @@ export default function AdminDashboardPage() {
             });
         }
 
-        // 4. New Leads
-        const { count: leadsCount } = await supabase.from('leads')
+        // 4. Website Orders (pending, from website source)
+        const { count: websiteOrderCount } = await supabase.from('orders')
             .select('*', { count: 'exact', head: true })
-            .eq('status', 'new');
+            .eq('source', 'website')
+            .eq('status', 'pending');
 
         setStats([
             { title: "Total Clients", value: clientCount?.toString() || "0", icon: Users, color: "text-blue-600" },
             { title: "Active Orders", value: orderCount?.toString() || "0", icon: ShoppingBag, color: "text-green-600" },
             { title: "New Messages", value: unreadCount.toString(), icon: MessageSquare, color: "text-purple-600" },
-            { title: "New Leads", value: leadsCount?.toString() || "0", icon: Users, color: "text-orange-600" },
+            { title: "Website Orders", value: websiteOrderCount?.toString() || "0", icon: Globe, color: "text-orange-600" },
         ]);
 
         // 5. Recent Activity
@@ -97,7 +98,6 @@ export default function AdminDashboardPage() {
             .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchStats)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, fetchStats)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'organizations' }, fetchStats)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, fetchStats)
             .subscribe();
 
         return () => {

@@ -29,7 +29,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, Filter, Pencil, Trash2 } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Globe, Monitor, Inbox, Zap, CheckCircle } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -42,8 +42,11 @@ type Order = {
     timeline_step: number;
     last_status_update: string;
     created_at: string;
-    details: { item: string; qty: number }[];
+    details: any;
     price: number | null;
+    description: string | null;
+    source: string | null;
+    attachments: string[] | null;
     organizations: {
         name: string;
     };
@@ -54,11 +57,20 @@ type Organization = {
     name: string;
 };
 
+type Tab = 'new' | 'active' | 'finished';
+
+const TAB_CONFIG: { key: Tab; label: string; icon: React.ElementType; statuses: string[] }[] = [
+    { key: 'new', label: 'New', icon: Inbox, statuses: ['pending'] },
+    { key: 'active', label: 'Active', icon: Zap, statuses: ['design', 'production', 'shipped'] },
+    { key: 'finished', label: 'Finished', icon: CheckCircle, statuses: ['completed'] },
+];
+
 export default function AdminOrdersPage() {
     const supabase = createClient();
     const [orders, setOrders] = useState<Order[]>([]);
     const [organizations, setOrganizations] = useState<Organization[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
+    const [activeTab, setActiveTab] = useState<Tab>('new');
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
@@ -85,6 +97,14 @@ export default function AdminOrdersPage() {
 
     useEffect(() => {
         fetchData();
+
+        // Realtime updates for orders
+        const channel = supabase
+            .channel('admin-orders-realtime')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, fetchData)
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
     }, []);
 
     const handleCreate = async () => {
@@ -100,7 +120,8 @@ export default function AdminOrdersPage() {
             status: 'pending',
             timeline_step: 1,
             price: parseFloat(newOrderPrice) || 0,
-            details: newOrderDetails
+            details: newOrderDetails,
+            source: 'portal',
         });
 
         if (error) {
@@ -148,16 +169,27 @@ export default function AdminOrdersPage() {
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm("Are you sure?")) return;
+        if (!confirm("Are you sure you want to delete this order?")) return;
         await supabase.from('orders').delete().eq('id', id);
         fetchData();
     };
 
-    const filteredOrders = orders.filter(order =>
-        order.organizations?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        order.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        order.id.includes(searchQuery)
-    );
+    // Tab filtering
+    const currentStatuses = TAB_CONFIG.find(t => t.key === activeTab)?.statuses || [];
+    const filteredOrders = orders
+        .filter(o => currentStatuses.includes(o.status))
+        .filter(o =>
+            o.organizations?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            o.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            o.id.includes(searchQuery)
+        );
+
+    // Tab counts
+    const tabCounts: Record<Tab, number> = {
+        new: orders.filter(o => ['pending'].includes(o.status)).length,
+        active: orders.filter(o => ['design', 'production', 'shipped'].includes(o.status)).length,
+        finished: orders.filter(o => ['completed'].includes(o.status)).length,
+    };
 
     return (
         <div className="space-y-6">
@@ -255,6 +287,35 @@ export default function AdminOrdersPage() {
                 </Dialog>
             </div>
 
+            {/* Tabs */}
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg w-fit">
+                {TAB_CONFIG.map(tab => (
+                    <button
+                        key={tab.key}
+                        onClick={() => setActiveTab(tab.key)}
+                        className={cn(
+                            "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-semibold transition-all",
+                            activeTab === tab.key
+                                ? "bg-white text-slate-900 shadow-sm"
+                                : "text-slate-500 hover:text-slate-700"
+                        )}
+                    >
+                        <tab.icon className="h-4 w-4" />
+                        {tab.label}
+                        {tabCounts[tab.key] > 0 && (
+                            <span className={cn(
+                                "ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold",
+                                activeTab === tab.key
+                                    ? tab.key === 'new' ? "bg-amber-100 text-amber-700" : tab.key === 'active' ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
+                                    : "bg-slate-200 text-slate-600"
+                            )}>
+                                {tabCounts[tab.key]}
+                            </span>
+                        )}
+                    </button>
+                ))}
+            </div>
+
             <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-4 border-b border-slate-200 bg-slate-50/50">
                     <div className="relative max-w-sm">
@@ -272,7 +333,7 @@ export default function AdminOrdersPage() {
                         <TableRow>
                             <TableHead>Order Name</TableHead>
                             <TableHead>Client</TableHead>
-                            <TableHead>Qty</TableHead>
+                            <TableHead>Source</TableHead>
                             <TableHead>Price</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead>Timeline</TableHead>
@@ -283,14 +344,30 @@ export default function AdminOrdersPage() {
                     <TableBody>
                         {filteredOrders.map((order) => (
                             <TableRow key={order.id}>
-                                <TableCell className="font-semibold text-slate-900">
-                                    {order.name}
+                                <TableCell>
+                                    <div>
+                                        <p className="font-semibold text-slate-900">{order.name}</p>
+                                        {order.description && (
+                                            <p className="text-xs text-slate-400 mt-0.5 line-clamp-1 max-w-[200px]">{order.description}</p>
+                                        )}
+                                    </div>
                                 </TableCell>
                                 <TableCell className="text-slate-600">
                                     {order.organizations?.name}
                                 </TableCell>
-                                <TableCell className="text-slate-600 font-medium">
-                                    {order.details?.reduce((sum, d) => sum + (d.qty || 0), 0) || 0}
+                                <TableCell>
+                                    <span className={cn(
+                                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase",
+                                        order.source === 'website'
+                                            ? "bg-indigo-100 text-indigo-700"
+                                            : "bg-slate-100 text-slate-600"
+                                    )}>
+                                        {order.source === 'website' ? (
+                                            <><Globe className="h-3 w-3" /> Website</>
+                                        ) : (
+                                            <><Monitor className="h-3 w-3" /> Portal</>
+                                        )}
+                                    </span>
                                 </TableCell>
                                 <TableCell className="font-medium text-slate-900">
                                     ${(order.price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -363,7 +440,9 @@ export default function AdminOrdersPage() {
                 </Table>
                 {filteredOrders.length === 0 && (
                     <div className="p-12 text-center text-slate-500 text-sm">
-                        No orders found.
+                        {activeTab === 'new' ? 'No new orders waiting for review.' :
+                         activeTab === 'active' ? 'No orders in production.' :
+                         'No completed orders found.'}
                     </div>
                 )}
             </div>

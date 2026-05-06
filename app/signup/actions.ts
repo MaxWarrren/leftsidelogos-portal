@@ -12,6 +12,7 @@ export async function signup(prevState: any, formData: FormData) {
     const email = formData.get('email') as string
     const password = formData.get('password') as string
     const fullName = formData.get('fullName') as string
+    const organizationName = formData.get('organizationName') as string | null
 
     const { data, error } = await supabase.auth.signUp({
         email,
@@ -19,6 +20,7 @@ export async function signup(prevState: any, formData: FormData) {
         options: {
             data: {
                 full_name: fullName,
+                organization_name: organizationName || undefined,
             },
             emailRedirectTo: `${origin}/auth/callback`,
         },
@@ -34,3 +36,4 @@ export async function signup(prevState: any, formData: FormData) {
 
     return { message: 'Please check your email to confirm your account.', error: '' }
 }
+

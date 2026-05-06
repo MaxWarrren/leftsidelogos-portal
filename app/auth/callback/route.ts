@@ -27,15 +27,56 @@ export async function GET(request: Request) {
                 console.error("Failed to link new user to lead:", updateError);
             }
 
+            // Auto-create organization if provided during signup
+            const orgName = data.user.user_metadata?.organization_name;
+            if (orgName) {
+                // Check if user already has an org membership
+                const { data: existingMembership } = await supabase
+                    .from('organization_members')
+                    .select('id')
+                    .eq('user_id', data.user.id)
+                    .limit(1)
+                    .single();
+
+                if (!existingMembership) {
+                    const accessCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+                    const { data: newOrg, error: orgError } = await supabase
+                        .from('organizations')
+                        .insert({ name: orgName, access_code: accessCode })
+                        .select('id')
+                        .single();
+
+                    if (newOrg && !orgError) {
+                        await supabase
+                            .from('organization_members')
+                            .insert({
+                                organization_id: newOrg.id,
+                                user_id: data.user.id,
+                                role: 'owner',
+                            });
+                    }
+                }
+            }
+
             const forwardedHost = request.headers.get('x-forwarded-host') // original origin before load balancer
             const isLocalEnv = process.env.NODE_ENV === 'development'
+
+            // If user has an org, go to dashboard; otherwise go to join page
+            const { data: membership } = await supabase
+                .from('organization_members')
+                .select('id')
+                .eq('user_id', data.user.id)
+                .limit(1)
+                .single();
+
+            const redirectPath = membership ? next : '/join';
+
             if (isLocalEnv) {
-                // we can be sure that there is no load balancer in between, so no need to watch for X-Forwarded-Host
-                return NextResponse.redirect(`${origin}${next}`)
+                return NextResponse.redirect(`${origin}${redirectPath}`)
             } else if (forwardedHost) {
-                return NextResponse.redirect(`https://${forwardedHost}${next}`)
+                return NextResponse.redirect(`https://${forwardedHost}${redirectPath}`)
             } else {
-                return NextResponse.redirect(`${origin}${next}`)
+                return NextResponse.redirect(`${origin}${redirectPath}`)
             }
         }
     }

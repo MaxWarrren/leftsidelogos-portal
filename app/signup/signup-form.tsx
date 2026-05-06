@@ -49,6 +49,11 @@ export function SignupForm() {
                             <Input id="fullName" name="fullName" placeholder="John Doe" required />
                         </div>
                         <div className="space-y-2">
+                            <Label htmlFor="organizationName">Organization / Company Name</Label>
+                            <Input id="organizationName" name="organizationName" placeholder="Your Company Inc." />
+                            <p className="text-xs text-slate-400">Create a new organization, or leave blank to join one with an access code.</p>
+                        </div>
+                        <div className="space-y-2">
                             <Label htmlFor="email">Email</Label>
                             <Input id="email" name="email" type="email" placeholder="m@example.com" required />
                         </div>
