@@ -35,6 +35,7 @@ import {
     GripVertical,
     ExternalLink,
     Image as ImageIcon,
+    Download,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -269,13 +270,23 @@ export default function AdminCatalogPage() {
                                     ))}
                                 </select>
                             </div>
-                            <Button
-                                className="bg-slate-900 text-white hover:bg-slate-800"
-                                onClick={() => (window.location.href = "/admin/catalog/new")}
-                            >
-                                <Plus className="mr-2 h-4 w-4" />
-                                New Product
-                            </Button>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="outline"
+                                    className="border-slate-200"
+                                    onClick={() => (window.location.href = "/admin/catalog/import")}
+                                >
+                                    <Download className="mr-2 h-4 w-4" />
+                                    Import from SSA
+                                </Button>
+                                <Button
+                                    className="bg-slate-900 text-white hover:bg-slate-800"
+                                    onClick={() => (window.location.href = "/admin/catalog/new")}
+                                >
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    New Product
+                                </Button>
+                            </div>
                         </div>
                         <Table>
                             <TableHeader className="bg-slate-50">
