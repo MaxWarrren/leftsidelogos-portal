@@ -49,6 +49,7 @@ type SsaProductSummary = {
     styleName: string;
     brandName: string;
     description: string;
+    productUrl: string;
     colors: SsaColor[];
     sizes: string[];
     priceRange: { min: number; max: number };
@@ -81,11 +82,15 @@ export default function ImportFromSsaPage() {
 
     // ─── Step 3 catalog metadata ───
     const [categories, setCategories] = useState<CatalogCategory[]>([]);
+    const [existingBrands, setExistingBrands] = useState<string[]>([]);
+    const [brand, setBrand] = useState("");
     const [name, setName] = useState("");
     const [slug, setSlug] = useState("");
     const [slugManual, setSlugManual] = useState(false);
     const [categoryId, setCategoryId] = useState("");
-    const [sku, setSku] = useState("");
+    const [itemNumber, setItemNumber] = useState("");
+    const [styleNumber, setStyleNumber] = useState("");
+    const [sourceUrl, setSourceUrl] = useState("");
     const [description, setDescription] = useState("");
     const [basePrice, setBasePrice] = useState("");
     const [published, setPublished] = useState(false);
@@ -103,7 +108,7 @@ export default function ImportFromSsaPage() {
         );
     }, [name, slugManual]);
 
-    // Load categories once
+    // Load categories + existing brands once
     useEffect(() => {
         (async () => {
             const { data } = await supabase
@@ -111,6 +116,22 @@ export default function ImportFromSsaPage() {
                 .select("id, name")
                 .order("sort_order");
             if (data) setCategories(data as CatalogCategory[]);
+        })();
+        (async () => {
+            const { data } = await supabase
+                .from("catalog_products")
+                .select("brand")
+                .not("brand", "is", null);
+            if (data) {
+                const unique = Array.from(
+                    new Set(
+                        data
+                            .map((r: { brand: string | null }) => (r.brand || "").trim())
+                            .filter((b: string) => b.length > 0)
+                    )
+                ).sort((a, b) => a.localeCompare(b));
+                setExistingBrands(unique);
+            }
         })();
     }, [supabase]);
 
@@ -134,9 +155,20 @@ export default function ImportFromSsaPage() {
             }
             const summary = body.product as SsaProductSummary;
             setProduct(summary);
-            // Pre-fill step 3 metadata from API data
-            setName(`${summary.brandName} ${summary.styleName}`);
-            setSku(summary.styleName);
+            // Pre-fill step 3 metadata from API data. Brand stays separate
+            // from the product name so the admin sees a clean split.
+            setBrand(summary.brandName);
+            // The API description usually starts with the brand+style — strip
+            // that prefix so the product name is just the descriptive part.
+            const cleanedName = stripBrandStylePrefix(
+                summary.description,
+                summary.brandName,
+                summary.styleName
+            );
+            setName(cleanedName);
+            setStyleNumber(summary.styleName);
+            setItemNumber("");
+            setSourceUrl(summary.productUrl);
             setDescription(summary.description);
             setBasePrice(summary.priceRange.min ? summary.priceRange.min.toFixed(2) : "");
             setSelectedColors(new Set());
@@ -193,6 +225,11 @@ export default function ImportFromSsaPage() {
             return;
         }
 
+        if (sourceUrl.trim() && !/^https?:\/\//i.test(sourceUrl.trim())) {
+            toast.error("Source URL must start with http:// or https://");
+            return;
+        }
+
         setImporting(true);
         try {
             const res = await fetch("/api/admin/ssa/import", {
@@ -204,10 +241,13 @@ export default function ImportFromSsaPage() {
                     mock,
                     selectedColorCodes: Array.from(selectedColors),
                     selectedSizes: Array.from(selectedSizes),
+                    brand: brand.trim(),
                     name: name.trim(),
                     slug: slug.trim(),
                     category_id: categoryId,
-                    sku: sku.trim(),
+                    item_number: itemNumber.trim(),
+                    style_number: styleNumber.trim(),
+                    source_url: sourceUrl.trim(),
                     description: description.trim(),
                     base_price: priceNum,
                     published,
@@ -284,6 +324,9 @@ export default function ImportFromSsaPage() {
                     selectedColors={selectedColors}
                     selectedSizes={selectedSizes}
                     categories={categories}
+                    existingBrands={existingBrands}
+                    brand={brand}
+                    setBrand={setBrand}
                     name={name}
                     setName={setName}
                     slug={slug}
@@ -293,8 +336,12 @@ export default function ImportFromSsaPage() {
                     }}
                     categoryId={categoryId}
                     setCategoryId={setCategoryId}
-                    sku={sku}
-                    setSku={setSku}
+                    itemNumber={itemNumber}
+                    setItemNumber={setItemNumber}
+                    styleNumber={styleNumber}
+                    setStyleNumber={setStyleNumber}
+                    sourceUrl={sourceUrl}
+                    setSourceUrl={setSourceUrl}
                     description={description}
                     setDescription={setDescription}
                     basePrice={basePrice}
@@ -642,14 +689,21 @@ function Step3Metadata({
     selectedColors,
     selectedSizes,
     categories,
+    existingBrands,
+    brand,
+    setBrand,
     name,
     setName,
     slug,
     setSlug,
     categoryId,
     setCategoryId,
-    sku,
-    setSku,
+    itemNumber,
+    setItemNumber,
+    styleNumber,
+    setStyleNumber,
+    sourceUrl,
+    setSourceUrl,
     description,
     setDescription,
     basePrice,
@@ -666,14 +720,21 @@ function Step3Metadata({
     selectedColors: Set<string>;
     selectedSizes: Set<string>;
     categories: CatalogCategory[];
+    existingBrands: string[];
+    brand: string;
+    setBrand: (v: string) => void;
     name: string;
     setName: (v: string) => void;
     slug: string;
     setSlug: (v: string) => void;
     categoryId: string;
     setCategoryId: (v: string) => void;
-    sku: string;
-    setSku: (v: string) => void;
+    itemNumber: string;
+    setItemNumber: (v: string) => void;
+    styleNumber: string;
+    setStyleNumber: (v: string) => void;
+    sourceUrl: string;
+    setSourceUrl: (v: string) => void;
     description: string;
     setDescription: (v: string) => void;
     basePrice: string;
@@ -705,6 +766,10 @@ function Step3Metadata({
                     <h2 className="text-lg font-bold text-slate-900">Catalog details</h2>
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
+                            <Label>Brand</Label>
+                            <BrandCombobox value={brand} onChange={setBrand} options={existingBrands} />
+                        </div>
+                        <div className="space-y-2">
                             <Label>Product Name *</Label>
                             <Input
                                 value={name}
@@ -712,21 +777,52 @@ function Step3Metadata({
                                 className="border-slate-200"
                             />
                         </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
                         <div className="space-y-2">
-                            <Label>SKU *</Label>
+                            <Label>
+                                Style #<span className="text-xs text-slate-400 ml-2">(optional)</span>
+                            </Label>
                             <Input
-                                value={sku}
-                                onChange={(e) => setSku(e.target.value)}
+                                value={styleNumber}
+                                onChange={(e) => setStyleNumber(e.target.value)}
+                                className="border-slate-200 font-mono text-sm"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>
+                                Item #<span className="text-xs text-slate-400 ml-2">(optional)</span>
+                            </Label>
+                            <Input
+                                placeholder="auto-filled from first variant"
+                                value={itemNumber}
+                                onChange={(e) => setItemNumber(e.target.value)}
+                                className="border-slate-200 font-mono text-sm"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>
+                                Slug<span className="text-xs text-slate-400 ml-2">(auto)</span>
+                            </Label>
+                            <Input
+                                value={slug}
+                                onChange={(e) => setSlug(e.target.value)}
                                 className="border-slate-200 font-mono text-sm"
                             />
                         </div>
                     </div>
                     <div className="space-y-2">
-                        <Label>Slug</Label>
+                        <Label>
+                            Source URL
+                            <span className="text-xs text-slate-400 ml-2">
+                                (link customers click on the item page)
+                            </span>
+                        </Label>
                         <Input
-                            value={slug}
-                            onChange={(e) => setSlug(e.target.value)}
-                            className="border-slate-200 font-mono text-sm"
+                            placeholder="https://www.ssactivewear.com/p/..."
+                            value={sourceUrl}
+                            onChange={(e) => setSourceUrl(e.target.value)}
+                            className="border-slate-200"
                         />
                     </div>
                     <div className="space-y-2">
@@ -845,4 +941,97 @@ function Row({ label, value }: { label: string; value: string }) {
             <span className="font-semibold text-slate-900">{value}</span>
         </div>
     );
+}
+
+// SSA descriptions usually begin with "{Brand} {Style} ..." — strip that prefix
+// so the product name field gets just the descriptive part. Falls back to the
+// raw description if no prefix is detected.
+function stripBrandStylePrefix(
+    description: string,
+    brand: string,
+    style: string
+): string {
+    if (!description) return `${brand} ${style}`.trim();
+    const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(
+        `^\\s*${escape(brand)}\\s*${escape(style)}\\s*(?:[-–—]\\s*)?`,
+        "i"
+    );
+    const stripped = description.replace(pattern, "").trim();
+    return stripped || description.trim();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BrandCombobox (same behavior as the one in product-form.tsx).
+// ─────────────────────────────────────────────────────────────────────────────
+function BrandCombobox({
+    value,
+    onChange,
+    options,
+}: {
+    value: string;
+    onChange: (v: string) => void;
+    options: string[];
+}) {
+    const [open, setOpen] = useState(false);
+    const matches = value.trim()
+        ? options.filter((o) => o.toLowerCase().includes(value.toLowerCase()))
+        : options;
+    const isNew =
+        value.trim().length > 0 &&
+        !options.some((o) => o.toLowerCase() === value.trim().toLowerCase());
+
+    return (
+        <div className="relative">
+            <Input
+                placeholder="e.g. BELLA + CANVAS"
+                value={value}
+                onChange={(e) => {
+                    onChange(e.target.value);
+                    setOpen(true);
+                }}
+                onFocus={() => setOpen(true)}
+                onBlur={() => setTimeout(() => setOpen(false), 120)}
+                className="border-slate-200"
+            />
+            {open && (matches.length > 0 || isNew) && (
+                <div className="absolute left-0 right-0 top-full mt-1 z-30 max-h-60 overflow-auto rounded-md border border-slate-200 bg-white shadow-lg">
+                    {matches.map((opt) => (
+                        <button
+                            key={opt}
+                            type="button"
+                            onMouseDown={(e) => {
+                                e.preventDefault();
+                                onChange(opt);
+                                setOpen(false);
+                            }}
+                            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50"
+                        >
+                            <span className="text-slate-700">{opt}</span>
+                            {value === opt && <CheckIcon />}
+                        </button>
+                    ))}
+                    {isNew && (
+                        <button
+                            type="button"
+                            onMouseDown={(e) => {
+                                e.preventDefault();
+                                setOpen(false);
+                            }}
+                            className="flex w-full items-center gap-2 border-t border-slate-100 bg-slate-50/60 px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-100"
+                        >
+                            <span>
+                                Add new brand:{" "}
+                                <span className="font-semibold text-slate-900">{value.trim()}</span>
+                            </span>
+                        </button>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function CheckIcon() {
+    return <Check className="h-3.5 w-3.5 text-slate-900" />;
 }

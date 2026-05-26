@@ -44,7 +44,11 @@ type CatalogProduct = {
     name: string;
     slug: string;
     category_id: string;
-    sku: string;
+    sku: string | null;
+    brand: string | null;
+    item_number: string | null;
+    style_number: string | null;
+    source_url: string | null;
     description: string | null;
     colors: string[];
     sizes: string[];
@@ -211,9 +215,14 @@ export default function AdminCatalogPage() {
 
     // ─── Filtering ───
     const filteredProducts = products.filter((p) => {
+        const q = searchQuery.toLowerCase();
         const matchesSearch =
-            p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            p.sku.toLowerCase().includes(searchQuery.toLowerCase());
+            !q ||
+            p.name.toLowerCase().includes(q) ||
+            (p.brand || "").toLowerCase().includes(q) ||
+            (p.sku || "").toLowerCase().includes(q) ||
+            (p.item_number || "").toLowerCase().includes(q) ||
+            (p.style_number || "").toLowerCase().includes(q);
         const matchesCategory = filterCategory === "all" || p.category_id === filterCategory;
         return matchesSearch && matchesCategory;
     });
@@ -251,7 +260,7 @@ export default function AdminCatalogPage() {
                                 <div className="relative max-w-sm flex-1">
                                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
                                     <Input
-                                        placeholder="Search products or SKU..."
+                                        placeholder="Search name, brand, item # or style #..."
                                         className="pl-9 bg-white border-slate-200"
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
@@ -293,7 +302,7 @@ export default function AdminCatalogPage() {
                                 <TableRow>
                                     <TableHead className="w-[60px]">Image</TableHead>
                                     <TableHead>Product</TableHead>
-                                    <TableHead>SKU</TableHead>
+                                    <TableHead>Style / Item #</TableHead>
                                     <TableHead>Category</TableHead>
                                     <TableHead>Price</TableHead>
                                     <TableHead className="text-center">Published</TableHead>
@@ -319,6 +328,11 @@ export default function AdminCatalogPage() {
                                         </TableCell>
                                         <TableCell>
                                             <div className="flex flex-col">
+                                                {product.brand && (
+                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                                        {product.brand}
+                                                    </span>
+                                                )}
                                                 <span className="font-semibold text-slate-900">
                                                     {product.name}
                                                 </span>
@@ -328,7 +342,17 @@ export default function AdminCatalogPage() {
                                             </div>
                                         </TableCell>
                                         <TableCell className="text-slate-600 font-mono text-xs">
-                                            {product.sku}
+                                            <div className="flex flex-col leading-tight">
+                                                {product.style_number && (
+                                                    <span>Style: {product.style_number}</span>
+                                                )}
+                                                {product.item_number && (
+                                                    <span className="text-slate-400">Item: {product.item_number}</span>
+                                                )}
+                                                {!product.style_number && !product.item_number && (
+                                                    <span className="text-slate-300">{product.sku || "—"}</span>
+                                                )}
+                                            </div>
                                         </TableCell>
                                         <TableCell>
                                             <Badge variant="outline" className="text-xs font-medium">

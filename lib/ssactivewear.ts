@@ -48,6 +48,7 @@ export type SsaProductSummary = {
     styleName: string;
     brandName: string;
     description: string;
+    productUrl: string;     // canonical SSA product page URL
     colors: SsaColor[];
     sizes: string[];        // unique, in size order
     sizeMap: Record<string, string[]>;  // colorCode -> sizes available for that color
@@ -90,6 +91,18 @@ function absoluteImageUrl(path: string | null | undefined): string | null {
     if (!path) return null;
     if (path.startsWith("http")) return path;
     return SSA_IMAGE_BASE + path.replace(/^\/+/, "");
+}
+
+// Build the canonical SSA product page URL.
+// Pattern: https://www.ssactivewear.com/p/{brand-slug}/{styleName}
+// e.g. "BELLA + CANVAS" / "3001" -> /p/bella_+_canvas/3001
+function buildProductUrl(brandName: string, styleName: string): string {
+    const brandSlug = brandName
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, "_");
+    const styleSlug = encodeURIComponent(styleName.trim());
+    return `${SSA_IMAGE_BASE}p/${encodeURI(brandSlug)}/${styleSlug}`;
 }
 
 function buildLookupUrl(identifier: string, kind: SsaIdentifierKind): string {
@@ -210,6 +223,7 @@ function groupVariants(rawVariants: SsaVariant[]): SsaProductSummary {
         styleName: first.styleName,
         brandName: first.brandName,
         description: first.description,
+        productUrl: buildProductUrl(first.brandName, first.styleName),
         colors: Array.from(colorMap.values()),
         sizes: sortedSizes,
         sizeMap,

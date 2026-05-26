@@ -18,12 +18,15 @@ type ImportBody = {
     selectedColorCodes: string[];
     selectedSizes: string[];
     // Catalog metadata
+    brand?: string;
     name: string;
     slug: string;
     category_id: string;
     base_price: number;
-    sku?: string;          // override; defaults to styleName
-    description?: string;  // override; defaults to API description
+    item_number?: string;
+    style_number?: string;
+    source_url?: string;
+    description?: string;
     published?: boolean;
     featured?: boolean;
 };
@@ -111,23 +114,22 @@ export async function POST(req: NextRequest) {
         );
     }
 
-    // Re-host every image into Supabase Storage.
+    // Re-host every image into Supabase Storage and build the two image
+    // shapes the customer-facing site expects:
+    //   images_by_color: { [colorName]: string[] }    — ordered gallery per color
+    //   image_variants:  { [angle]: { [colorSlug]: url } }   — MockupStudio lookup
     const slug = safeSegment(body.slug);
     const styleId = summary.styleID || summary.styleName;
     const basePath = `ssa/${styleId}/${Date.now()}`;
-    const colorPublicSwatches: string[] = [];
-    const imageVariants: Array<{ color: string; angle: string; url: string }> = [];
+    const imagesByColor: Record<string, string[]> = {};
+    const imageVariants: Record<string, Record<string, string>> = {};
+    let totalRehosted = 0;
     const failedFetches: string[] = [];
 
     for (const color of colorsToImport) {
-        const swatchUrl = await rehostImage(
-            adminSupabase,
-            color.swatch,
-            `${basePath}/${safeSegment(color.colorCode)}/swatch`,
-            failedFetches
-        );
-        if (swatchUrl) colorPublicSwatches.push(swatchUrl);
-
+        // Per-color gallery: front, side, back, onModelFront — in that order so
+        // the first image (front) becomes the catalog hero.
+        const gallery: string[] = [];
         for (const angle of ANGLES) {
             const src = color.images[angle as Angle];
             if (!src) continue;
@@ -137,17 +139,21 @@ export async function POST(req: NextRequest) {
                 `${basePath}/${safeSegment(color.colorCode)}/${angle}`,
                 failedFetches
             );
-            if (url) {
-                imageVariants.push({
-                    color: color.colorName,
-                    angle,
-                    url,
-                });
-            }
+            if (!url) continue;
+            gallery.push(url);
+            // Populate image_variants for MockupStudio. Key = angle + colorSlug.
+            const colorSlug = color.colorName
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "-")
+                .replace(/(^-|-$)/g, "");
+            if (!imageVariants[angle]) imageVariants[angle] = {};
+            imageVariants[angle][colorSlug] = url;
+            totalRehosted += 1;
         }
+        if (gallery.length > 0) imagesByColor[color.colorName] = gallery;
     }
 
-    if (imageVariants.length === 0) {
+    if (totalRehosted === 0) {
         return NextResponse.json(
             {
                 error:
@@ -158,23 +164,31 @@ export async function POST(req: NextRequest) {
         );
     }
 
-    // Use front images per color as the primary gallery; fall back to first variant.
+    // Legacy flat `images[]`: take the front of each color (catalog hero per color).
     const galleryImages: string[] = [];
     for (const color of colorsToImport) {
-        const front = imageVariants.find(
-            (v) => v.color === color.colorName && v.angle === "front"
-        );
-        if (front) galleryImages.push(front.url);
-    }
-    if (galleryImages.length === 0 && imageVariants[0]) {
-        galleryImages.push(imageVariants[0].url);
+        const first = imagesByColor[color.colorName]?.[0];
+        if (first) galleryImages.push(first);
     }
 
+    const styleNumber = (body.style_number?.trim() || summary.styleName).slice(0, 64);
+    // Item # defaults to the first selected variant's SKU.
+    const firstVariantSku = summary.raw.find((v) =>
+        body.selectedColorCodes.includes(v.colorCode) &&
+        body.selectedSizes.includes(v.sizeName)
+    )?.sku;
+    const itemNumber = (body.item_number?.trim() || firstVariantSku || "").slice(0, 64) || null;
+
     const insertPayload = {
+        brand: (body.brand?.trim() || summary.brandName || "").slice(0, 120) || null,
         name: body.name.trim(),
         slug,
         category_id: body.category_id,
-        sku: (body.sku?.trim() || summary.styleName).slice(0, 64),
+        // Keep legacy sku populated for back-compat (mirrors item_number).
+        sku: itemNumber || styleNumber || null,
+        item_number: itemNumber,
+        style_number: styleNumber,
+        source_url: (body.source_url?.trim() || summary.productUrl || "").slice(0, 500) || null,
         description:
             (body.description?.trim() || summary.description || "").slice(0, 2000) || null,
         base_price: body.base_price,
@@ -183,6 +197,7 @@ export async function POST(req: NextRequest) {
         colors: colorsToImport.map((c) => c.colorName),
         sizes: body.selectedSizes,
         images: galleryImages,
+        images_by_color: imagesByColor,
         image_variants: imageVariants,
         base_color: colorsToImport[0]?.colorName ?? null,
     };
@@ -194,14 +209,22 @@ export async function POST(req: NextRequest) {
         .single();
 
     if (insertError) {
-        // If new columns (image_variants / base_color) don't exist yet, retry
-        // without them so the import still works on un-migrated databases.
+        // If new columns (image_variants / base_color / brand / item_number /
+        // style_number / source_url) don't exist yet, retry without them so
+        // the import still works on un-migrated databases.
         if (
-            /image_variants|base_color|print_areas/.test(insertError.message)
+            /image_variants|images_by_color|base_color|print_areas|brand|item_number|style_number|source_url/.test(
+                insertError.message
+            )
         ) {
             const legacyPayload = { ...insertPayload };
             delete (legacyPayload as Record<string, unknown>).image_variants;
+            delete (legacyPayload as Record<string, unknown>).images_by_color;
             delete (legacyPayload as Record<string, unknown>).base_color;
+            delete (legacyPayload as Record<string, unknown>).brand;
+            delete (legacyPayload as Record<string, unknown>).item_number;
+            delete (legacyPayload as Record<string, unknown>).style_number;
+            delete (legacyPayload as Record<string, unknown>).source_url;
             const { data: legacyProduct, error: legacyError } = await adminSupabase
                 .from("catalog_products")
                 .insert(legacyPayload)
@@ -217,7 +240,7 @@ export async function POST(req: NextRequest) {
                 success: true,
                 product: legacyProduct,
                 imageCount: galleryImages.length,
-                variantCount: imageVariants.length,
+                variantCount: totalRehosted,
                 warning:
                     "Image variants and base_color were skipped — apply the 20260523_catalog_customizer_fields migration to enable them.",
                 failedFetches,
