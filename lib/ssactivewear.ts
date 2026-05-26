@@ -41,13 +41,31 @@ export type SsaVariant = {
     gtin?: string;
 };
 
+// Style-level metadata from the /v2/styles/{ident} endpoint. We hit this
+// first to grab the proper `title` (e.g. "CVC Jersey Tee") and the long
+// HTML `description` — both of which are absent from /v2/products/.
+export type SsaStyle = {
+    styleID: number;
+    partNumber: string;
+    brandName: string;
+    styleName: string;
+    title: string;          // e.g. "CVC Jersey Tee"
+    description: string;    // HTML, usually containing a <ul> of features
+    baseCategory?: string;
+    categories?: string;
+    brandImage?: string;
+    styleImage?: string;
+};
+
 // What we return to the UI: variants regrouped by color, with per-color images
 // and a full list of available sizes flattened.
 export type SsaProductSummary = {
     styleID: number;
     styleName: string;
     brandName: string;
-    description: string;
+    title: string;          // from styles.title (e.g. "CVC Jersey Tee")
+    description: string;    // raw HTML from styles.description
+    bulletPoints: string[]; // parsed feature list from the description HTML
     productUrl: string;     // canonical SSA product page URL
     colors: SsaColor[];
     sizes: string[];        // unique, in size order
@@ -105,6 +123,81 @@ function buildProductUrl(brandName: string, styleName: string): string {
     return `${SSA_IMAGE_BASE}p/${encodeURI(brandSlug)}/${styleSlug}`;
 }
 
+// Extract bullet-point features from the HTML `description` returned by
+// /v2/styles/{ident}. SSA's descriptions are basically `<p>…</p><ul><li>…</li></ul>`,
+// so a regex is enough — no need to pull in cheerio. We strip whitespace and
+// drop empty matches; nested tags inside <li> are rare on these endpoints and
+// would just be passed through as text content.
+export function parseBulletPoints(html: string): string[] {
+    if (!html) return [];
+    const out: string[] = [];
+    const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
+    let m: RegExpExecArray | null;
+    while ((m = liRegex.exec(html)) !== null) {
+        // Strip any inline tags inside the <li>, collapse whitespace.
+        const text = m[1]
+            .replace(/<[^>]+>/g, " ")
+            .replace(/&nbsp;/g, " ")
+            .replace(/&amp;/g, "&")
+            .replace(/\s+/g, " ")
+            .trim();
+        if (text) out.push(text);
+    }
+    return out;
+}
+
+function buildStyleLookupUrl(identifier: string, kind: SsaIdentifierKind): string {
+    const id = identifier.trim();
+    switch (kind) {
+        case "styleId":
+            return `${SSA_BASE_URL}/styles/?styleid=${encodeURIComponent(id)}&mediatype=json`;
+        case "partNumber":
+            return `${SSA_BASE_URL}/styles/?partnumber=${encodeURIComponent(id)}&mediatype=json`;
+        case "sku":
+        case "style":
+        default:
+            // /v2/styles/{ident} accepts StyleID, PartNumber, or "BrandName StyleName".
+            // For a raw SKU we don't have a great path, but most SKUs start with the
+            // partnumber, so fall back to the indexed endpoint by style name.
+            return `${SSA_BASE_URL}/styles/${encodeURIComponent(id)}?mediatype=json`;
+    }
+}
+
+async function fetchStyle(
+    identifier: string,
+    kind: SsaIdentifierKind
+): Promise<SsaStyle | null> {
+    const auth = basicAuthHeader();
+    if (!auth) {
+        throw new SsaApiError(
+            "SS Activewear credentials are not configured. Set SSA_ACCOUNT_NUMBER and SSA_API_KEY, or use mock mode.",
+            401
+        );
+    }
+
+    const url = buildStyleLookupUrl(identifier, kind);
+    const res = await fetch(url, {
+        headers: { Authorization: auth, Accept: "application/json" },
+        cache: "no-store",
+    });
+
+    // 404 from /styles isn't fatal — we can still recover the basics from
+    // /products. Let the caller decide whether to bail.
+    if (res.status === 404) return null;
+
+    if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new SsaApiError(
+            `SS Activewear styles API returned ${res.status}: ${body.slice(0, 200) || res.statusText}`,
+            res.status
+        );
+    }
+
+    const data = await res.json().catch(() => null);
+    if (!Array.isArray(data) || data.length === 0) return null;
+    return data[0] as SsaStyle;
+}
+
 function buildLookupUrl(identifier: string, kind: SsaIdentifierKind): string {
     const id = identifier.trim();
     switch (kind) {
@@ -157,7 +250,10 @@ async function fetchVariants(
     return data as SsaVariant[];
 }
 
-function groupVariants(rawVariants: SsaVariant[]): SsaProductSummary {
+function groupVariants(
+    rawVariants: SsaVariant[],
+    style: SsaStyle | null = null
+): SsaProductSummary {
     if (rawVariants.length === 0) {
         throw new SsaApiError("No variants returned for that identifier", 404);
     }
@@ -218,12 +314,25 @@ function groupVariants(rawVariants: SsaVariant[]): SsaProductSummary {
         max: prices.length ? Math.max(...prices) : 0,
     };
 
+    // Prefer style-level fields (`title`, HTML `description`) when available.
+    // Fall back to whatever the variants gave us so mock mode + legacy code
+    // paths still produce a valid summary.
+    const descriptionHtml = style?.description ?? first.description ?? "";
+    const bulletPoints = parseBulletPoints(descriptionHtml);
+    const title = style?.title?.trim()
+        || `${first.brandName} ${first.styleName}`.trim();
+
     return {
-        styleID: first.styleID,
-        styleName: first.styleName,
-        brandName: first.brandName,
-        description: first.description,
-        productUrl: buildProductUrl(first.brandName, first.styleName),
+        styleID: style?.styleID ?? first.styleID,
+        styleName: style?.styleName ?? first.styleName,
+        brandName: style?.brandName ?? first.brandName,
+        title,
+        description: descriptionHtml,
+        bulletPoints,
+        productUrl: buildProductUrl(
+            style?.brandName ?? first.brandName,
+            style?.styleName ?? first.styleName
+        ),
         colors: Array.from(colorMap.values()),
         sizes: sortedSizes,
         sizeMap,
@@ -241,10 +350,39 @@ export async function lookupProduct(
         throw new SsaApiError("Identifier is required", 400);
     }
     if (opts.mock || process.env.SSA_MOCK === "true") {
-        return groupVariants(MOCK_LOOKUP(identifier, kind));
+        // Mock mode: synthesize a style record so the UI gets a realistic
+        // title + bullet list to render, without hitting the network.
+        const variants = MOCK_LOOKUP(identifier, kind);
+        const first = variants[0];
+        const mockStyle: SsaStyle = {
+            styleID: first.styleID,
+            partNumber: first.styleName,
+            brandName: first.brandName,
+            styleName: first.styleName,
+            title: "Unisex Jersey Short Sleeve Tee",
+            description:
+                "<p>Bella+Canvas 3001 — the modern retail-fit tee.</p>" +
+                "<ul>" +
+                "<li>4.2 oz., 100% Airlume combed and ring-spun cotton</li>" +
+                "<li>Retail fit, side-seamed</li>" +
+                "<li>Shoulder taping</li>" +
+                "<li>Heather Prism colors: 99% Airlume combed cotton, 1% poly</li>" +
+                "</ul>",
+        };
+        return groupVariants(variants, mockStyle);
     }
-    const variants = await fetchVariants(identifier, kind);
-    return groupVariants(variants);
+    // Real API: hit /v2/styles first (for `title` + HTML description) and
+    // /v2/products in parallel (for variants). We don't block on the styles
+    // call failing — the importer will gracefully degrade to variant-derived
+    // fields.
+    const [style, variants] = await Promise.all([
+        fetchStyle(identifier, kind).catch((e) => {
+            console.warn("SSA style lookup failed, falling back to variant data:", e);
+            return null;
+        }),
+        fetchVariants(identifier, kind),
+    ]);
+    return groupVariants(variants, style);
 }
 
 // Server-side image proxy: fetch from SSA's CDN, return bytes.

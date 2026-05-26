@@ -26,6 +26,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { createClient } from "@/utils/supabase/client";
+import { isPopularColor } from "@/components/catalog/import/popular-colors";
 
 type IdentifierKind = "style" | "sku" | "partNumber" | "styleId";
 
@@ -48,12 +49,33 @@ type SsaProductSummary = {
     styleID: number;
     styleName: string;
     brandName: string;
-    description: string;
+    title: string;          // e.g. "CVC Jersey Tee" — the SSA styles.title field
+    description: string;    // HTML from styles.description
+    bulletPoints: string[]; // parsed feature list
     productUrl: string;
     colors: SsaColor[];
     sizes: string[];
     priceRange: { min: number; max: number };
 };
+
+// Slugify "BELLA + CANVAS" + "CVC Jersey Tee" → "bella-canvas-cvc-jersey-tee".
+// Lower-cases, drops non-alphanumerics, collapses runs of `-`. If the name
+// already starts with the brand (rare), we don't duplicate it.
+function slugify(s: string): string {
+    return s
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "");
+}
+
+function brandedSlug(brand: string, name: string): string {
+    const b = slugify(brand);
+    const n = slugify(name);
+    if (!b) return n;
+    if (!n) return b;
+    if (n.startsWith(b + "-") || n === b) return n;
+    return `${b}-${n}`;
+}
 
 type CatalogCategory = { id: string; name: string };
 
@@ -97,16 +119,13 @@ export default function ImportFromSsaPage() {
     const [featured, setFeatured] = useState(false);
     const [importing, setImporting] = useState(false);
 
-    // Auto-slug from name on step 3
+    // Auto-slug from brand + name on step 3. Including brand makes catalog
+    // URLs disambiguate styles (e.g. /bella-canvas-cvc-jersey-tee vs the
+    // Gildan equivalent) without the admin having to remember to type it.
     useEffect(() => {
         if (slugManual) return;
-        setSlug(
-            name
-                .toLowerCase()
-                .replace(/[^a-z0-9]+/g, "-")
-                .replace(/(^-|-$)/g, "")
-        );
-    }, [name, slugManual]);
+        setSlug(brandedSlug(brand, name));
+    }, [brand, name, slugManual]);
 
     // Load categories + existing brands once
     useEffect(() => {
@@ -155,21 +174,20 @@ export default function ImportFromSsaPage() {
             }
             const summary = body.product as SsaProductSummary;
             setProduct(summary);
-            // Pre-fill step 3 metadata from API data. Brand stays separate
-            // from the product name so the admin sees a clean split.
+            // Pre-fill step 3 metadata from the SSA styles endpoint. The
+            // `title` field gives us a clean product name ("CVC Jersey Tee")
+            // without the brand/style prefix the description used to carry.
             setBrand(summary.brandName);
-            // The API description usually starts with the brand+style — strip
-            // that prefix so the product name is just the descriptive part.
-            const cleanedName = stripBrandStylePrefix(
-                summary.description,
-                summary.brandName,
-                summary.styleName
-            );
-            setName(cleanedName);
+            setName(summary.title || `${summary.brandName} ${summary.styleName}`.trim());
             setStyleNumber(summary.styleName);
             setItemNumber("");
             setSourceUrl(summary.productUrl);
-            setDescription(summary.description);
+            // Description = the parsed bullet list, one per line with a
+            // bullet glyph. Clients want only this — no marketing prose.
+            const bulletText = (summary.bulletPoints ?? [])
+                .map((b) => `• ${b}`)
+                .join("\n");
+            setDescription(bulletText);
             setBasePrice(summary.priceRange.min ? summary.priceRange.min.toFixed(2) : "");
             setSelectedColors(new Set());
             setSelectedSizes(new Set(summary.sizes));
@@ -539,6 +557,19 @@ function Step2Variants({
     onBack: () => void;
     onNext: () => void;
 }) {
+    // Split colors into a "Recommended" group (matches the hardcoded smart
+    // list) and an "All other colors" group, preserving SSA's original order
+    // within each bucket.
+    const { recommended, others } = useMemo(() => {
+        const recommended: SsaColor[] = [];
+        const others: SsaColor[] = [];
+        for (const c of product.colors) {
+            if (isPopularColor(c.colorName, c.colorFamily)) recommended.push(c);
+            else others.push(c);
+        }
+        return { recommended, others };
+    }, [product.colors]);
+
     return (
         <div className="space-y-6">
             <div className="bg-white rounded-lg border border-slate-200 p-6">
@@ -558,11 +589,8 @@ function Step2Variants({
                             )}
                         </div>
                         <h2 className="text-2xl font-bold text-slate-900">
-                            {product.brandName} {product.styleName}
+                            {product.title || `${product.brandName} ${product.styleName}`}
                         </h2>
-                        <p className="text-sm text-slate-500 mt-1 max-w-3xl">
-                            {product.description}
-                        </p>
                         <p className="text-xs text-slate-400 mt-2">
                             {product.colors.length} colors · {product.sizes.length} sizes ·
                             {" "}
@@ -574,96 +602,80 @@ function Step2Variants({
                 </div>
             </div>
 
-            <div className="bg-white rounded-lg border border-slate-200 p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-bold text-slate-900">Colors</h3>
-                    <button
-                        onClick={toggleAllColors}
-                        className="text-xs font-medium text-slate-600 hover:text-slate-900 underline-offset-2 hover:underline"
-                    >
-                        {allColorsSelected ? "Deselect all" : "Select all"}
-                    </button>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {product.colors.map((c) => {
-                        const selected = selectedColors.has(c.colorCode);
-                        return (
-                            <button
-                                key={c.colorCode}
-                                onClick={() => toggleColor(c.colorCode)}
-                                className={`group relative flex flex-col rounded-lg border p-3 text-left transition-all ${selected
-                                        ? "border-slate-900 ring-2 ring-slate-900/10 bg-slate-50"
-                                        : "border-slate-200 hover:border-slate-400 bg-white"
-                                    }`}
+            {/* Sticky header: sizes + Continue at the TOP of the panel so the
+                admin always sees the primary action while scrolling colors. */}
+            <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                <div className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-slate-200 px-6 py-4 space-y-3">
+                    <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                            <h3 className="text-sm font-semibold text-slate-900 mb-2">Sizes to import</h3>
+                            <div className="flex flex-wrap gap-1.5">
+                                {product.sizes.map((s) => {
+                                    const selected = selectedSizes.has(s);
+                                    return (
+                                        <button
+                                            key={s}
+                                            onClick={() => toggleSize(s)}
+                                            className={`h-8 min-w-[2.5rem] px-2.5 rounded-md border text-xs font-medium transition-all ${selected
+                                                ? "border-slate-900 bg-slate-900 text-white"
+                                                : "border-slate-200 bg-white text-slate-600 hover:border-slate-400"
+                                                }`}
+                                        >
+                                            {s}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2 shrink-0">
+                            <Button
+                                onClick={onNext}
+                                className="bg-slate-900 text-white hover:bg-slate-800"
                             >
-                                <div className="aspect-square rounded-md bg-slate-100 overflow-hidden mb-2">
-                                    {c.images.front ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img
-                                            src={c.images.front}
-                                            alt={c.colorName}
-                                            className="h-full w-full object-cover"
-                                        />
-                                    ) : (
-                                        <div className="h-full w-full grid place-items-center text-slate-300 text-xs">
-                                            No image
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    {c.swatch ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img
-                                            src={c.swatch}
-                                            alt=""
-                                            className="h-4 w-4 rounded-full border border-slate-200 shrink-0"
-                                        />
-                                    ) : (
-                                        <span className="h-4 w-4 rounded-full bg-slate-200 shrink-0" />
-                                    )}
-                                    <div className="min-w-0">
-                                        <p className="text-sm font-semibold text-slate-900 truncate">
-                                            {c.colorName}
-                                        </p>
-                                        <p className="text-[10px] text-slate-400 font-mono uppercase">
-                                            {c.colorCode} · {c.availableSizes.length} sizes
-                                        </p>
-                                    </div>
-                                </div>
-                                {selected && (
-                                    <div className="absolute top-2 right-2 h-5 w-5 rounded-full bg-slate-900 text-white grid place-items-center">
-                                        <Check className="h-3 w-3" />
-                                    </div>
-                                )}
-                                {!c.inStock && (
-                                    <span className="absolute top-2 left-2 text-[9px] font-bold uppercase tracking-wider bg-red-100 text-red-700 rounded px-1.5 py-0.5">
-                                        OOS
-                                    </span>
-                                )}
-                            </button>
-                        );
-                    })}
+                                Continue
+                                <ArrowRight className="h-4 w-4 ml-2" />
+                            </Button>
+                            <p className="text-[11px] text-slate-400">
+                                {selectedColors.size} {selectedColors.size === 1 ? "color" : "colors"} · {selectedSizes.size} {selectedSizes.size === 1 ? "size" : "sizes"}
+                            </p>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            <div className="bg-white rounded-lg border border-slate-200 p-6 space-y-4">
-                <h3 className="text-lg font-bold text-slate-900">Sizes</h3>
-                <div className="flex flex-wrap gap-2">
-                    {product.sizes.map((s) => {
-                        const selected = selectedSizes.has(s);
-                        return (
-                            <button
-                                key={s}
-                                onClick={() => toggleSize(s)}
-                                className={`h-10 min-w-[3rem] px-3 rounded-md border text-sm font-medium transition-all ${selected
-                                        ? "border-slate-900 bg-slate-900 text-white"
-                                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-400"
-                                    }`}
-                            >
-                                {s}
-                            </button>
-                        );
-                    })}
+                <div className="p-6 space-y-6">
+                    <div className="flex items-start justify-between gap-3">
+                        <div>
+                            <h3 className="text-lg font-bold text-slate-900">Colors</h3>
+                            <p className="text-sm text-slate-500 mt-1">
+                                You don&apos;t need to import every color — pick the ones you&apos;ll actually sell.
+                            </p>
+                        </div>
+                        <button
+                            onClick={toggleAllColors}
+                            className="text-xs font-medium text-slate-600 hover:text-slate-900 underline-offset-2 hover:underline shrink-0 pt-1"
+                        >
+                            {allColorsSelected ? "Deselect all" : "Select all"}
+                        </button>
+                    </div>
+
+                    {recommended.length > 0 && (
+                        <ColorGroup
+                            heading="Recommended"
+                            subheading="Top sellers for custom apparel"
+                            colors={recommended}
+                            selectedColors={selectedColors}
+                            toggleColor={toggleColor}
+                        />
+                    )}
+
+                    {others.length > 0 && (
+                        <ColorGroup
+                            heading={recommended.length > 0 ? "All other colors" : "All colors"}
+                            colors={others}
+                            selectedColors={selectedColors}
+                            toggleColor={toggleColor}
+                        />
+                    )}
                 </div>
             </div>
 
@@ -672,10 +684,97 @@ function Step2Variants({
                     <ArrowLeft className="h-4 w-4 mr-1" />
                     Back
                 </Button>
-                <Button onClick={onNext} className="bg-slate-900 text-white hover:bg-slate-800">
-                    Next: catalog details
-                    <ArrowRight className="h-4 w-4 ml-2" />
-                </Button>
+            </div>
+        </div>
+    );
+}
+
+// Sub-section for one bucket of colors (Recommended / All other colors).
+function ColorGroup({
+    heading,
+    subheading,
+    colors,
+    selectedColors,
+    toggleColor,
+}: {
+    heading: string;
+    subheading?: string;
+    colors: SsaColor[];
+    selectedColors: Set<string>;
+    toggleColor: (code: string) => void;
+}) {
+    return (
+        <div className="space-y-3">
+            <div>
+                <h4 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">
+                    {heading}
+                    <span className="ml-2 text-xs font-normal text-slate-400 normal-case tracking-normal">
+                        ({colors.length})
+                    </span>
+                </h4>
+                {subheading && (
+                    <p className="text-xs text-slate-400 mt-0.5">{subheading}</p>
+                )}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {colors.map((c) => {
+                    const selected = selectedColors.has(c.colorCode);
+                    return (
+                        <button
+                            key={c.colorCode}
+                            onClick={() => toggleColor(c.colorCode)}
+                            className={`group relative flex flex-col rounded-lg border p-3 text-left transition-all ${selected
+                                ? "border-slate-900 ring-2 ring-slate-900/10 bg-slate-50"
+                                : "border-slate-200 hover:border-slate-400 bg-white"
+                                }`}
+                        >
+                            <div className="aspect-square rounded-md bg-slate-100 overflow-hidden mb-2">
+                                {c.images.front ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                        src={c.images.front}
+                                        alt={c.colorName}
+                                        className="h-full w-full object-cover"
+                                    />
+                                ) : (
+                                    <div className="h-full w-full grid place-items-center text-slate-300 text-xs">
+                                        No image
+                                    </div>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {c.swatch ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                        src={c.swatch}
+                                        alt=""
+                                        className="h-4 w-4 rounded-full border border-slate-200 shrink-0"
+                                    />
+                                ) : (
+                                    <span className="h-4 w-4 rounded-full bg-slate-200 shrink-0" />
+                                )}
+                                <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-slate-900 truncate">
+                                        {c.colorName}
+                                    </p>
+                                    <p className="text-[10px] text-slate-400 font-mono uppercase">
+                                        {c.colorCode} · {c.availableSizes.length} sizes
+                                    </p>
+                                </div>
+                            </div>
+                            {selected && (
+                                <div className="absolute top-2 right-2 h-5 w-5 rounded-full bg-slate-900 text-white grid place-items-center">
+                                    <Check className="h-3 w-3" />
+                                </div>
+                            )}
+                            {!c.inStock && (
+                                <span className="absolute top-2 left-2 text-[9px] font-bold uppercase tracking-wider bg-red-100 text-red-700 rounded px-1.5 py-0.5">
+                                    OOS
+                                </span>
+                            )}
+                        </button>
+                    );
+                })}
             </div>
         </div>
     );
@@ -941,24 +1040,6 @@ function Row({ label, value }: { label: string; value: string }) {
             <span className="font-semibold text-slate-900">{value}</span>
         </div>
     );
-}
-
-// SSA descriptions usually begin with "{Brand} {Style} ..." — strip that prefix
-// so the product name field gets just the descriptive part. Falls back to the
-// raw description if no prefix is detected.
-function stripBrandStylePrefix(
-    description: string,
-    brand: string,
-    style: string
-): string {
-    if (!description) return `${brand} ${style}`.trim();
-    const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const pattern = new RegExp(
-        `^\\s*${escape(brand)}\\s*${escape(style)}\\s*(?:[-–—]\\s*)?`,
-        "i"
-    );
-    const stripped = description.replace(pattern, "").trim();
-    return stripped || description.trim();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
