@@ -29,14 +29,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, Pencil, Trash2, Globe, Monitor, Inbox, Zap, CheckCircle } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Globe, Monitor, Inbox, Zap, CheckCircle, ReceiptText, Store, Users, DollarSign, ShoppingBag, Gauge } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 type Order = {
     id: string;
-    organization_id: string;
+    organization_id: string | null;
     status: string;
     name: string;
     timeline_step: number;
@@ -46,10 +46,13 @@ type Order = {
     price: number | null;
     description: string | null;
     source: string | null;
+    payment_status: string | null;
+    customer_name: string | null;
+    customer_email: string | null;
     attachments: string[] | null;
     organizations: {
         name: string;
-    };
+    } | null;
 };
 
 type Organization = {
@@ -65,12 +68,50 @@ const TAB_CONFIG: { key: Tab; label: string; icon: React.ElementType; statuses: 
     { key: 'finished', label: 'Finished', icon: CheckCircle, statuses: ['completed'] },
 ];
 
+// Display metadata for each order source.
+const SOURCE_META: Record<string, { label: string; icon: React.ElementType; cls: string }> = {
+    square: { label: 'Square Invoices', icon: ReceiptText, cls: 'bg-emerald-100 text-emerald-700' },
+    'square-pos': { label: 'Square POS', icon: Store, cls: 'bg-amber-100 text-amber-700' },
+    website: { label: 'Website', icon: Globe, cls: 'bg-indigo-100 text-indigo-700' },
+    portal: { label: 'Portal', icon: Monitor, cls: 'bg-slate-100 text-slate-600' },
+};
+const sourceMeta = (s: string | null) => SOURCE_META[s ?? 'portal'] ?? SOURCE_META.portal;
+
+const fmtMoney = (n: number) =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n || 0);
+
+// Unique clients: distinct orgs (for orders with an org) + distinct customer
+// emails (for org-less analytics orders). POS is anonymous retail, so excluded.
+function uniqueClientCount(list: Order[]): number {
+    const ids = new Set<string>();
+    for (const o of list) {
+        if (o.source === 'square-pos') continue;
+        if (o.organization_id) ids.add('org:' + o.organization_id);
+        else if (o.customer_email) ids.add('em:' + o.customer_email.toLowerCase());
+    }
+    return ids.size;
+}
+
+function StatCard({ icon: Icon, label, value, accent }: { icon: React.ElementType; label: string; value: string; accent: string }) {
+    return (
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between">
+                <span className="text-xs font-medium uppercase tracking-wider text-slate-500">{label}</span>
+                <Icon className={cn("h-4 w-4", accent)} />
+            </div>
+            <div className="mt-1.5 text-2xl font-bold text-slate-900">{value}</div>
+        </div>
+    );
+}
+
 export default function AdminOrdersPage() {
     const supabase = createClient();
     const [orders, setOrders] = useState<Order[]>([]);
     const [organizations, setOrganizations] = useState<Organization[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
     const [activeTab, setActiveTab] = useState<Tab>('new');
+    const [finishedYear, setFinishedYear] = useState<string>(String(new Date().getFullYear()));
+    const [sourceFilter, setSourceFilter] = useState<string>('all');
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
@@ -176,13 +217,39 @@ export default function AdminOrdersPage() {
 
     // Tab filtering
     const currentStatuses = TAB_CONFIG.find(t => t.key === activeTab)?.statuses || [];
-    const filteredOrders = orders
+
+    // Years present in the Finished tab (descending), plus an "All time" option.
+    const finishedYears = Array.from(
+        new Set(orders.filter(o => o.status === 'completed').map(o => new Date(o.created_at).getFullYear()))
+    ).sort((a, b) => b - a);
+    const yearTabs: string[] = [...finishedYears.map(String), 'all'];
+
+    // Year + source scoping (Finished tab only), applied before the text search.
+    const scopedOrders = orders
         .filter(o => currentStatuses.includes(o.status))
-        .filter(o =>
-            o.organizations?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            o.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            o.id.includes(searchQuery)
-        );
+        .filter(o => {
+            if (activeTab !== 'finished') return true;
+            const yearOk = finishedYear === 'all' || new Date(o.created_at).getFullYear() === Number(finishedYear);
+            const sourceOk = sourceFilter === 'all' || (o.source ?? 'portal') === sourceFilter;
+            return yearOk && sourceOk;
+        });
+
+    const searchLc = searchQuery.toLowerCase();
+    const filteredOrders = scopedOrders.filter(o =>
+        (o.organizations?.name ?? '').toLowerCase().includes(searchLc) ||
+        (o.customer_name ?? '').toLowerCase().includes(searchLc) ||
+        (o.name ?? '').toLowerCase().includes(searchLc) ||
+        o.id.includes(searchQuery)
+    );
+
+    // Yearly analytics for the Finished tab (reflect the year + source scope, not the search box).
+    const yearRevenue = scopedOrders.reduce((s, o) => s + (o.price || 0), 0);
+    const yearStats = {
+        revenue: yearRevenue,
+        orders: scopedOrders.length,
+        clients: uniqueClientCount(scopedOrders),
+        aov: scopedOrders.length ? yearRevenue / scopedOrders.length : 0,
+    };
 
     // Tab counts
     const tabCounts: Record<Tab, number> = {
@@ -316,6 +383,46 @@ export default function AdminOrdersPage() {
                 ))}
             </div>
 
+            {/* Finished-tab year sub-tabs, source filter, and yearly analytics */}
+            {activeTab === 'finished' && (
+                <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                        {yearTabs.map(y => (
+                            <button
+                                key={y}
+                                onClick={() => setFinishedYear(y)}
+                                className={cn(
+                                    "px-3 py-1.5 rounded-md text-sm font-semibold transition-all",
+                                    finishedYear === y ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                )}
+                            >
+                                {y === 'all' ? 'All time' : y}
+                            </button>
+                        ))}
+                        <div className="ml-auto">
+                            <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                                <SelectTrigger className="h-9 w-[180px] bg-white border-slate-200 text-sm">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="bg-white">
+                                    <SelectItem value="all">All sources</SelectItem>
+                                    <SelectItem value="square">Square Invoices</SelectItem>
+                                    <SelectItem value="square-pos">Square POS</SelectItem>
+                                    <SelectItem value="portal">Portal</SelectItem>
+                                    <SelectItem value="website">Website</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        <StatCard icon={DollarSign} label="Revenue" value={fmtMoney(yearStats.revenue)} accent="text-emerald-600" />
+                        <StatCard icon={ShoppingBag} label="Orders" value={String(yearStats.orders)} accent="text-blue-600" />
+                        <StatCard icon={Users} label="Unique Clients" value={String(yearStats.clients)} accent="text-violet-600" />
+                        <StatCard icon={Gauge} label="Avg Order" value={fmtMoney(yearStats.aov)} accent="text-slate-600" />
+                    </div>
+                </div>
+            )}
+
             <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-4 border-b border-slate-200 bg-slate-50/50">
                     <div className="relative max-w-sm">
@@ -342,31 +449,28 @@ export default function AdminOrdersPage() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {filteredOrders.map((order) => (
+                        {filteredOrders.map((order) => {
+                            const m = sourceMeta(order.source);
+                            const SourceIcon = m.icon;
+                            return (
                             <TableRow key={order.id}>
                                 <TableCell>
-                                    <div>
-                                        <p className="font-semibold text-slate-900">{order.name}</p>
+                                    <div className="max-w-[220px]">
+                                        <p className="font-semibold text-slate-900 truncate" title={order.name}>{order.name}</p>
                                         {order.description && (
-                                            <p className="text-xs text-slate-400 mt-0.5 line-clamp-1 max-w-[200px]">{order.description}</p>
+                                            <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{order.description}</p>
                                         )}
                                     </div>
                                 </TableCell>
                                 <TableCell className="text-slate-600">
-                                    {order.organizations?.name}
+                                    {order.organizations?.name ?? order.customer_name ?? <span className="text-slate-400">—</span>}
                                 </TableCell>
                                 <TableCell>
                                     <span className={cn(
                                         "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase",
-                                        order.source === 'website'
-                                            ? "bg-indigo-100 text-indigo-700"
-                                            : "bg-slate-100 text-slate-600"
+                                        m.cls
                                     )}>
-                                        {order.source === 'website' ? (
-                                            <><Globe className="h-3 w-3" /> Website</>
-                                        ) : (
-                                            <><Monitor className="h-3 w-3" /> Portal</>
-                                        )}
+                                        <SourceIcon className="h-3 w-3" /> {m.label}
                                     </span>
                                 </TableCell>
                                 <TableCell className="font-medium text-slate-900">
@@ -435,14 +539,15 @@ export default function AdminOrdersPage() {
                                     </Button>
                                 </TableCell>
                             </TableRow>
-                        ))}
+                            );
+                        })}
                     </TableBody>
                 </Table>
                 {filteredOrders.length === 0 && (
                     <div className="p-12 text-center text-slate-500 text-sm">
                         {activeTab === 'new' ? 'No new orders waiting for review.' :
                          activeTab === 'active' ? 'No orders in production.' :
-                         'No completed orders found.'}
+                         'No completed orders found for this view.'}
                     </div>
                 )}
             </div>
